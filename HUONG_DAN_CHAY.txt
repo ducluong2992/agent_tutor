@@ -1,0 +1,205 @@
+========================================================================
+     HƯỚNG DẪN CHẠY DỰ ÁN & CẤU HÌNH HỆ THỐNG AI TUTOR PLATFORM MVP
+========================================================================
+
+Tài liệu này cung cấp hướng dẫn cài đặt, cấu hình khóa API (Gemini, OpenAI, Telegram),
+tóm tắt các chức năng hiện có và sơ đồ luồng hoạt động chi tiết của dự án.
+
+------------------------------------------------------------------------
+1. TÓM TẮT CÁC CHỨC NĂNG HIỆN CÓ (EXISTING FEATURES)
+------------------------------------------------------------------------
+Hệ thống là một Gia sư AI Cá nhân hóa chạy song song trên 2 nền tảng: Giao diện Web 
+và Telegram Bot, sử dụng chung cơ sở dữ liệu SQLite và ChromaDB.
+
+*   Đăng ký & Hồ sơ Học sinh (Onboarding & Profile):
+    - Đăng ký tài khoản mới kèm theo các trường thông tin cá nhân: Tên, Email, Mục tiêu học tập, Trình độ hiện tại.
+    - Đăng nhập nhanh bằng Email, lưu phiên làm việc (Session) bằng Cookie an toàn.
+    - Cập nhật thông tin học tập trực tiếp từ giao diện Web Dashboard.
+    - Sinh mã liên kết (Linking Code) duy nhất (ví dụ: TUTOR-XXXXXX) để đồng bộ tài khoản với Telegram.
+
+*   Gia sư AI Chat Hub (AI Chat Tutor):
+    - Trò chuyện trực tiếp với Gia sư AI có hỗ trợ lưu trữ ngữ cảnh hội thoại (Memory Service - lưu giữ 10 tin nhắn gần nhất).
+    - Phân tích ý định tự động (Intent Action Parsing): AI phân tích tin nhắn người dùng để tự động đưa ra các hành động (Tạo lộ trình học, Lên lịch bài tập, Cập nhật thông tin mục tiêu).
+
+*   Tìm kiếm tài liệu thông minh (RAG - Retrieval-Augmented Generation):
+    - Hỗ trợ tải lên tài liệu định dạng: PDF (.pdf), Word (.docx), và Text (.txt).
+    - Tự động tách nhỏ văn bản (text chunking) và lưu trữ vector vào database ChromaDB (hoặc bộ nhớ tạm thời nếu ChromaDB gặp lỗi).
+    - Khi hỏi đáp, hệ thống tự động tìm các đoạn văn bản có độ tương đồng cao nhất trong tài liệu để đưa vào prompt làm ngữ cảnh (context), giúp AI trả lời chính xác, tránh hiện tượng "ảo giác" (hallucination).
+
+*   Lộ trình học tập động (Learning Roadmap):
+    - Học sinh có thể yêu cầu tạo lộ trình học cho một chủ đề bất kỳ (như: "lập lộ trình học Python", "roadmap Node.js").
+    - AI tự thiết kế lộ trình gồm các Milestone/Bước học cụ thể, mô tả chi tiết và số giờ học dự kiến.
+    - Giao diện Web hiển thị thanh tiến độ (%) trực quan. Học sinh tích chọn hoàn thành bước nào, tiến độ sẽ tăng và đồng bộ ngay vào Database.
+
+*   Lên lịch bài tập về nhà tự động (Homework Scheduler):
+    - Lên lịch bài tập linh hoạt qua tin nhắn chat (ví dụ: "giao bài tập Python sau 1 phút", "schedule OOP homework at 8 PM tomorrow") hoặc điền form hẹn giờ trên Web.
+    - Sử dụng thư viện APScheduler quản lý tiến trình ngầm (background scheduler).
+    - Khi đến giờ hẹn, hệ thống kích hoạt AI để sinh bài tập tùy biến cho học sinh (gồm câu hỏi trắc nghiệm, tự luận, gợi ý) và gửi trực tiếp qua chat Web hoặc nhắn tin riêng qua Telegram Bot.
+
+*   Tích hợp Bot Telegram (Telegram Channel):
+    - Liên kết tài khoản Web bằng lệnh: `/start <mã_liên_kết>`
+    - Chat trực tiếp với AI Gia sư như trên Web.
+    - Hỗ trợ gửi tài liệu (PDF, Word, Text) trực tiếp qua cửa sổ chat Telegram; hệ thống sẽ tải về và lập chỉ mục RAG tự động.
+
+------------------------------------------------------------------------
+2. LUỒNG HOẠT ĐỘNG CHI TIẾT (SYSTEM OPERATIONAL FLOW)
+------------------------------------------------------------------------
+
+Luồng 1: Đồng bộ tài khoản Web và Telegram Bot
+  [Học sinh đăng ký trên Web] 
+             │
+             ▼
+  [Sinh mã liên kết TUTOR-ABC]
+             │
+             ▼
+  [Học sinh mở Telegram Bot gửi lệnh: /start TUTOR-ABC]
+             │
+             ▼
+  [Bot.py xác thực mã --> Cập nhật telegram_id vào bảng Student trong DB]
+             │
+             ▼
+  [Từ nay, lịch sử chat, tài liệu và lịch bài tập được đồng bộ 100% trên cả 2 kênh]
+
+
+Luồng 2: Chat Gia sư & Phân tích Ý định (Intent Action Flow)
+  [Học sinh gửi tin nhắn (Web hoặc Telegram)]
+             │
+             ▼
+  [1. Lấy lịch sử chat từ MemoryService]
+  [2. Lấy tài liệu bổ sung từ RAGService bằng ChromaDB]
+             │
+             ▼
+  [Tạo System Prompt yêu cầu AI trả về định dạng JSON cấu trúc:
+   {
+     "reply": "Câu trả lời của Gia sư...",
+     "action": { "type": "Tên_Hành_Động", "params": { ... } }
+   }]
+             │
+             ▼
+  [TutorService phân tích Action:]
+    ├── Không có action ──> Lưu tin nhắn ──> Phản hồi text cho học sinh.
+    │
+    ├── type: "generate_roadmap" ──> Gọi RoadmapService ──> Sinh các bước học ──> Lưu vào bảng Roadmap & Progress ──> Cập nhật UI Web.
+    │
+    ├── type: "schedule_homework" ──> Gọi SchedulerService ──> Lên lịch APScheduler ──> Lưu vào bảng ScheduledJob.
+    │
+    └── type: "update_profile" ──> Cập nhật cột goals/level trực tiếp trong bảng Student.
+
+
+Luồng 3: Kích hoạt Giao bài tập về nhà ngầm (Background Job Trigger)
+  [Đến thời gian đã hẹn trong APScheduler]
+             │
+             ▼
+  [Cập nhật trạng thái ScheduledJob thành 'sent']
+             │
+             ▼
+  [Gọi AI sinh bài tập (gồm 3 câu hỏi, hướng dẫn và gợi ý)]
+             │
+             ▼
+  [Lưu nội dung bài tập vào lịch sử ChatMessage của học sinh]
+             │
+             ▼
+  [Kiểm tra: Nếu học sinh đã liên kết Telegram (có telegram_id)]
+    ├── CÓ ──> Gửi bài tập qua tin nhắn Telegram cho học sinh.
+    └── KHÔNG ──> Học sinh xem bài tập tại khung chat trên giao diện Web Dashboard.
+
+------------------------------------------------------------------------
+3. HƯỚNG DẪN CẤU HÌNH CÁC KEY API CÒN THIẾU
+------------------------------------------------------------------------
+Để chạy dự án bằng dữ liệu AI thực tế (thay vì chế độ Mock dữ liệu giả lập), bạn cần
+điền các khóa API vào tệp `.env` nằm tại thư mục gốc của dự án: `d:\Agent_Tutor\AI_TUTOR\.env`
+
+Mở tệp `.env` và bổ sung như sau:
+
+*   Bước 1: Chọn LLM Provider muốn sử dụng:
+    Thay đổi dòng:
+    `LLM_PROVIDER=mock` thành `LLM_PROVIDER=gemini` (Khuyên dùng) hoặc `LLM_PROVIDER=openai`
+
+*   Bước 2: Cấu hình Khóa API cụ thể:
+
+    1. Google Gemini API (Nếu dùng gemini):
+       - Thay đổi dòng: `GEMINI_API_KEY=`
+       - Điền khóa API của bạn vào sau dấu `=`.
+       - Cách lấy khóa: Truy cập trang Google AI Studio (https://aistudio.google.com/), đăng nhập và nhấp vào "Get API key".
+
+    2. OpenAI API (Nếu dùng openai):
+       - Thay đổi dòng: `OPENAI_API_KEY=`
+       - Điền khóa API của bạn vào sau dấu `=`.
+       - Cách lấy khóa: Truy cập trang OpenAI Developer Platform (https://platform.openai.com/api-keys) để khởi tạo.
+
+    3. Telegram Bot Token:
+       - Thay đổi dòng: `TELEGRAM_BOT_TOKEN=`
+       - Điền mã token bot của bạn vào sau dấu `=`.
+       - Cách tạo Bot & Lấy token:
+         a. Mở Telegram, tìm kiếm tài khoản `@BotFather`.
+         b. Gửi tin nhắn lệnh `/newbot` và làm theo hướng dẫn để đặt tên bot.
+         c. BotFather sẽ trả về một đường link bot và chuỗi ký tự Token dạng (ví dụ: `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`). Copy chuỗi này paste vào mục cấu hình.
+
+Ví dụ tệp `.env` sau khi điền đầy đủ:
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=AIzaSyD-xxxxxxxxxxxxxx_xxxxxxxxx
+GEMINI_MODEL=gemini-1.5-flash
+
+OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_MODEL=gpt-4o-mini
+
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+```
+
+------------------------------------------------------------------------
+4. HƯỚNG DẪN CÀI ĐẶT & CHẠY ỨNG DỤNG CHI TIẾT
+------------------------------------------------------------------------
+
+LƯU Ý: Dự án có cấu hình Mock dữ liệu tự động, nghĩa là nếu bạn CHƯA điền API Key,
+bạn vẫn có thể khởi động và kiểm tra toàn bộ tính năng hoạt động 100% bình thường.
+
+Cách 1: Chạy trực tiếp trên máy local
+
+*   Bước 1: Chuẩn bị môi trường ảo Python (khuyên dùng Python 3.10+)
+    Mở PowerShell/CMD tại thư mục dự án (`d:\Agent_Tutor\AI_TUTOR`):
+    ```bash
+    # Tạo môi trường ảo
+    python -m venv venv
+    
+    # Kích hoạt môi trường ảo (Windows)
+    .\venv\Scripts\activate
+    ```
+
+*   Bước 2: Cài đặt các thư viện phụ thuộc
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+*   Bước 3: Chạy kịch bản kiểm thử tự động (Pytest)
+    Chạy lệnh sau để kiểm tra kết nối DB, API endpoints, RAG và logic tạo lộ trình:
+    ```bash
+    pytest backend/tests/
+    ```
+    (Yêu cầu đầu ra hiển thị: "6 passed" - Có nghĩa là hệ thống của bạn hoạt động ổn định).
+
+*   Bước 4: Khởi chạy Server Backend & Telegram Bot
+    ```bash
+    uvicorn backend.main:app --reload
+    ```
+    - Web Dashboard sẽ chạy tại địa chỉ: http://127.0.0.1:8000/
+    - Nếu có cấu hình `TELEGRAM_BOT_TOKEN`, Bot Telegram cũng sẽ tự động được khởi chạy ngầm bằng cơ chế Long Polling để lắng nghe tin nhắn từ người dùng.
+
+---
+
+Cách 2: Chạy bằng Docker & Docker Compose
+Đảm bảo máy tính đã cài đặt Docker Desktop và đang chạy.
+
+*   Bước 1: Khởi động hệ thống
+    Mở CMD/PowerShell tại thư mục gốc dự án và chạy:
+    ```bash
+    docker-compose up --build -d
+    ```
+
+*   Bước 2: Kiểm tra trạng thái hoạt động của Container
+    ```bash
+    docker ps
+    docker logs -f ai_tutor_app
+    ```
+    Uvicorn Server sẽ lắng nghe tại cổng `8000` của máy host. Bạn truy cập qua http://localhost:8000/ để sử dụng. Dữ liệu SQLite và các file vector ChromaDB sẽ được mount lưu trữ bền vững tại thư mục `./backend/storage` trên máy của bạn.
+========================================================================

@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <link rel="icon" href="/static/images/home1.png" type="image/png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tutor Platform - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="body-gradient min-h-screen">
+    <!-- Navbar -->
+    <header class="navbar glassmorphism">
+        <div class="nav-brand">
+            <span class="logo-emoji">🎓</span>
+            <span class="nav-title">AI Tutor</span>
+        </div>
+        <div class="nav-user">
+            <span class="user-welcome">Xin chào, <strong id="header-student-name">{{ student.name }}</strong></span>
+            <a href="/logout" class="btn btn-secondary btn-sm">Đăng xuất</a>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="dashboard-grid">
+
+        <!-- COLUMN 1: Profile & Workspace (Left) -->
+        <section class="dashboard-col col-left">
+
+            <!-- Student Profile Card -->
+            <div class="card glassmorphism p-5 mb-5">
+                <h2 class="card-title"><span class="icon">👤</span> Thông tin học tập</h2>
+                <form id="profile-form" onsubmit="saveProfile(event)">
+                    <div class="form-group">
+                        <label class="form-label">Tên hiển thị</label>
+                        <input type="text" id="profile-name" class="form-input" value="{{ student.name }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mục tiêu học tập</label>
+                        <textarea id="profile-goals" class="form-textarea"
+                            rows="2">{{ student.learning_goals }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Trình độ</label>
+                        <select id="profile-level" class="form-select">
+                            <option value="Beginner" {% if student.skill_level=='Beginner' %}selected{% endif %}>Mới bắt
+                                đầu (Beginner)</option>
+                            <option value="Intermediate" {% if student.skill_level=='Intermediate' %}selected{% endif
+                                %}>Trung cấp (Intermediate)</option>
+                            <option value="Advanced" {% if student.skill_level=='Advanced' %}selected{% endif %}>Nâng
+                                cao (Advanced)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-full mt-2">Cập nhật thông tin</button>
+                </form>
+            </div>
+
+            <!-- Documents & RAG Upload -->
+            <div class="card glassmorphism p-5 mb-5">
+                <h2 class="card-title"><span class="icon">📚</span> Tài liệu học tập (RAG)</h2>
+                <div class="upload-zone mb-3">
+                    <label class="btn btn-secondary btn-sm w-full cursor-pointer text-center">
+                        📁 Tải tài liệu lên (.pdf, .docx, .txt)
+                        <input type="file" id="file-uploader" accept=".pdf,.docx,.txt" class="hidden"
+                            onchange="uploadDocument(this)">
+                    </label>
+                    <div id="upload-status" class="upload-status mt-2 text-xs"></div>
+                </div>
+                <div class="documents-list-container">
+                    <h3 class="section-subtitle">Tài liệu đã tải lên:</h3>
+                    <ul id="documents-list" class="item-list">
+                        {% for doc in documents %}
+                        <li class="item-list-row">
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" title="{{ doc.filename }}">{{ doc.filename }}</span>
+                            <span class="badge badge-accent">{{ doc.file_type }}</span>
+                        </li>
+                        {% else %}
+                        <li class="empty-placeholder text-center py-2">Chưa có tài liệu nào.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Telegram Integration Card -->
+            <div class="card glassmorphism p-5 mb-5">
+                <h2 class="card-title"><span class="icon">💬</span> Liên kết Telegram</h2>
+                <div class="telegram-instructions text-sm mb-3">
+                    <p>Truy cập Telegram Bot của bạn và gửi mã liên kết để đồng bộ lịch bài tập và trò chuyện:</p>
+                </div>
+                <div class="linking-code-box flex-center mb-3">
+                    <code id="linking-code-display">{{ student.linking_code }}</code>
+                </div>
+                <div class="telegram-status text-xs">
+                    Trạng thái bot:
+                    {% if student.telegram_id %}
+                    <span class="status-linked">🟢 Đã liên kết (ID: {{ student.telegram_id }})</span>
+                    {% else %}
+                    <span class="status-unlinked">🔴 Chưa liên kết</span>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- COLUMN 2: AI Tutor Chat Hub (Center) -->
+        <section class="dashboard-col col-center flex-col">
+            <div class="card chat-card glassmorphism flex-col flex-1">
+                <div class="chat-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="chat-title-info">
+                            <span class="status-indicator online"></span>
+                            <h3>Gia sư AI cá nhân</h3>
+                        </div>
+                        <button onclick="clearChatHistory()" class="btn-icon text-red-500 hover:text-red-700" title="Xóa toàn bộ lịch sử chat" style="font-size: 1.2rem; background: none; border: none; cursor: pointer;">🗑️</button>
+                    </div>
+                    <span class="chat-desc">Nhập chat bên dưới hoặc gõ "lập lộ trình học python", "giao bài tập cho tôi
+                        sau 1 phút"</span>
+                </div>
+
+                <!-- Chat Messages Scroll Container -->
+                <div id="chat-messages" class="chat-messages flex-1">
+                    <div class="chat-bubble ai">
+                        <div class="chat-bubble-content">
+                            Xin chào! Tôi là AI Tutor của bạn. Tôi đã sẵn sàng hỗ trợ bạn. Bạn muốn bắt đầu với chủ đề
+                            nào hôm nay?
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Input area -->
+                <div class="chat-input-container">
+                    <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex gap-2">
+                        <input type="text" id="chat-input" class="chat-input-box flex-1"
+                            placeholder="Hỏi gia sư, yêu cầu lập lộ trình, giao bài tập..." autocomplete="off">
+                        <button type="submit" class="btn btn-primary px-5">Gửi</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- COLUMN 3: Learning Roadmap & Schedule (Right) -->
+        <section class="dashboard-col col-right">
+
+            <!-- Learning Roadmap Section -->
+            <div class="card glassmorphism p-5 mb-5">
+                <h2 class="card-title"><span class="icon">🗺️</span> Lộ trình học tập</h2>
+
+                <div class="roadmap-generator mb-4">
+                    <form onsubmit="generateRoadmap(event)" class="flex gap-2">
+                        <input type="text" id="roadmap-subject" class="form-input flex-1"
+                            placeholder="Môn học, ví dụ: Python, Web..." required>
+                        <button type="submit" class="btn btn-primary btn-sm">Tạo</button>
+                    </form>
+                </div>
+
+                <div id="roadmap-progress-container" class="roadmap-progress-container mb-4" style="display: none;">
+                    <div class="progress-bar-header flex justify-between text-xs mb-1">
+                        <span>Tiến độ hoàn thành</span>
+                        <span id="roadmap-progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div id="roadmap-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div class="roadmap-steps-container">
+                    <ul id="roadmap-steps-list" class="roadmap-steps-list">
+                        <li class="empty-placeholder text-center py-4 text-sm">Chưa có lộ trình học tập nào được tạo.
+                            Hãy nhập môn học ở trên hoặc nói chuyện với AI Tutor để tạo lộ trình!</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Auto Homework Schedule Config Section -->
+            <div class="card glassmorphism p-5">
+                <h2 class="card-title"><span class="icon">🤖</span> Lịch học tự động</h2>
+
+                <!-- Config Panel -->
+                <div class="schedule-config-panel" id="auto-schedule-panel">
+                    <div class="schedule-status-banner">
+                        <div>
+                            <span id="schedule-status-badge" class="schedule-active-badge off">⏸ Tắt</span>
+                            <span class="text-xs opacity-70" style="margin-left:6px" id="schedule-summary">Chưa
+                                bật</span>
+                        </div>
+                        <label class="toggle-switch" title="Bật/tắt giao bài tự động">
+                            <input type="checkbox" id="auto-schedule-toggle" onchange="handleAutoToggle(this)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div id="schedule-config-fields" style="display:none">
+                        <div class="form-group mb-2">
+                            <label class="form-label">⏰ Giao bài lúc mấy giờ?</label>
+                            <div class="time-input-row">
+                                <span class="time-label">Mỗi ngày lúc</span>
+                                <input type="time" id="auto-hw-time" class="time-input" value="20:00">
+                            </div>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label class="form-label">📅 Tần suất giao bài</label>
+                            <div class="freq-pills" id="freq-pills">
+                                <span class="freq-pill" data-freq="1" onclick="selectFreq(1)">Hàng ngày</span>
+                                <span class="freq-pill" data-freq="2" onclick="selectFreq(2)">Cách 1 ngày</span>
+                                <span class="freq-pill" data-freq="3" onclick="selectFreq(3)">Cách 2 ngày</span>
+                                <span class="freq-pill" data-freq="7" onclick="selectFreq(7)">Hàng tuần</span>
+                            </div>
+                        </div>
+                        <button id="save-schedule-btn" onclick="saveScheduleConfig()"
+                            class="btn btn-secondary btn-sm w-full mt-2">💾 Lưu lịch học</button>
+                    </div>
+                </div>
+
+                <!-- One-time Homework Scheduler -->
+                <h3 class="section-subtitle">📌 Lịch bài tập thủ công</h3>
+                <div class="schedule-form-container mb-4">
+                    <form onsubmit="scheduleHomework(event)" class="flex-col gap-2">
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" id="schedule-topic" class="form-input flex-1"
+                                placeholder="Chủ đề bài tập..." required>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="datetime-local" id="schedule-time" class="form-input flex-1" required>
+                            <button type="submit" class="btn btn-secondary btn-sm">Đặt lịch</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="scheduled-jobs-list-container">
+                    <ul id="scheduled-jobs-list" class="item-list">
+                        {% for job in scheduled_jobs %}
+                        <li class="item-list-row flex justify-between items-center" id="job-row-{{ job.id }}">
+                            <div class="job-info">
+                                <p class="job-topic text-sm font-semibold">{{ job.topic }}</p>
+                                <p class="job-time text-xs opacity-70">{{ job.scheduled_time }}</p>
+                            </div>
+                            <div class="job-action flex items-center gap-2">
+                                <span
+                                    class="badge {% if job.status == 'pending' %}badge-pending{% elif job.status == 'sent' %}badge-success{% else %}badge-cancelled{% endif %}">{{
+                                    job.status }}</span>
+                                {% if job.status == 'pending' %}
+                                <button onclick="cancelJob({{ job.id }})" class="btn-icon text-red-500"
+                                    title="Hủy bỏ">✕</button>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% else %}
+                        <li class="empty-placeholder text-center py-2">Chưa có bài tập nào được lên lịch.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- JavaScript Framework for Dashboard UI updates -->
+    <script>
+        // ── State ──────────────────────────────────────────
+        let selectedFreq = 1;  // default daily
+        let currentMessageCount = 0;
+
+        // Load initial state
+        document.addEventListener('DOMContentLoaded', () => {
+            loadChatHistory();
+            loadRoadmap();
+            loadScheduledJobs();
+            loadScheduleConfig();
+            
+            // Auto-refresh chat and scheduled jobs every 5 seconds
+            setInterval(() => {
+                loadChatHistory();
+                loadScheduledJobs();
+                loadRoadmap();
+            }, 5000);
+        });
+
+        // Chat submit handler
+        async function handleChatSubmit(event) {
+            event.preventDefault();
+            const chatInput = document.getElementById('chat-input');
+            const message = chatInput.value.strip ? chatInput.value.strip() : chatInput.value.trim();
+            if (!message) return;
+
+            // Clear input
+            chatInput.value = '';
+
+            // Add user message to UI
+            appendChatMessage('user', message);
+
+            // Add typing indicator
+            const typingId = appendTypingIndicator();
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                removeTypingIndicator(typingId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    appendChatMessage('ai', data.reply);
+
+                    // If action was executed, refresh components
+                    if (data.action) {
+                        const actionType = data.action.type;
+                        if (actionType === 'schedule_homework') {
+                            loadScheduledJobs();
+                        } else if (actionType === 'generate_roadmap') {
+                            loadRoadmap();
+                        } else if (actionType === 'update_profile') {
+                            refreshProfileData();
+                            loadScheduleConfig(); // refresh schedule display
+                        } else if (actionType === 'grade_homework') {
+                            loadRoadmap(); // refresh score-weighted progress
+                        }
+                    }
+                } else {
+                    appendChatMessage('ai', '⚠️ Có lỗi xảy ra trong quá trình xử lý tin nhắn của bạn.');
+                }
+            } catch (error) {
+                removeTypingIndicator(typingId);
+                appendChatMessage('ai', '⚠️ Không thể kết nối với máy chủ.');
+                console.error(error);
+            }
+        }
+
+        // Load chat history
+        async function loadChatHistory() {
+            try {
+                const response = await fetch('/api/chat/history', { cache: 'no-store' });
+                if (response.ok) {
+                    const messages = await response.json();
+                    const container = document.getElementById('chat-messages');
+
+                    // Clear messages except the default greeting if history exists
+                    if (messages.length !== currentMessageCount) {
+                        currentMessageCount = messages.length;
+                        container.innerHTML = '';
+                        if (messages.length === 0) {
+                            container.innerHTML = `
+                                <div class="chat-bubble ai">
+                                    <div class="chat-bubble-content">
+                                        Xin chào! Tôi là AI Tutor của bạn. Tôi đã sẵn sàng hỗ trợ bạn. Bạn muốn bắt đầu với chủ đề nào hôm nay?
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        messages.forEach(msg => {
+                            appendChatMessage(msg.sender, msg.message, false);
+                        });
+                        scrollChatToBottom();
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load chat history:", error);
+            }
+        }
+
+        // Clear chat history
+        async function clearChatHistory() {
+            if (!confirm('Bạn có chắc muốn xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác.')) return;
+            
+            try {
+                const response = await fetch('/api/chat/history', { method: 'DELETE' });
+                if (response.ok) {
+                    loadChatHistory();
+                } else {
+                    alert('Không thể xóa lịch sử chat.');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Lỗi kết nối mạng.');
+            }
+        }
+
+        // Helper to append message
+        function appendChatMessage(sender, text, scroll = true) {
+            const container = document.getElementById('chat-messages');
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender}`;
+
+            // Basic markdown parsing for bold and bullet points
+            let formattedText = text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>')
+                .replace(/^(?:&nbsp;|\s)*•\s+(.*)/gm, '<li>$1</li>'); // basic bullet list item
+
+            bubble.innerHTML = `<div class="chat-bubble-content">${formattedText}</div>`;
+            container.appendChild(bubble);
+
+            if (scroll) {
+                scrollChatToBottom();
+            }
+        }
+
+        function scrollChatToBottom() {
+            const container = document.getElementById('chat-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Typing indicator helpers
+        function appendTypingIndicator() {
+            const container = document.getElementById('chat-messages');
+            const typing = document.createElement('div');
+            const id = 'typing_' + Date.now();
+            typing.id = id;
+            typing.className = 'chat-bubble ai typing-indicator-bubble';
+            typing.innerHTML = `
+                <div class="chat-bubble-content">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+            `;
+            container.appendChild(typing);
+            scrollChatToBottom();
+            return id;
+        }
+
+        function removeTypingIndicator(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        // Profile update
+        async function saveProfile(event) {
+            event.preventDefault();
+            const name = document.getElementById('profile-name').value;
+            const goals = document.getElementById('profile-goals').value;
+            const level = document.getElementById('profile-level').value;
+
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        learning_goals: goals,
+                        skill_level: level
+                    })
+                });
+
+                if (response.ok) {
+                    document.getElementById('header-student-name').innerText = name;
+                    alert('Đã cập nhật hồ sơ thành công!');
+                } else {
+                    alert('Lỗi khi cập nhật thông tin.');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Lỗi kết nối mạng.');
+            }
+        }
+
+        async function refreshProfileData() {
+            try {
+                const response = await fetch('/api/profile', { cache: 'no-store' });
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('profile-name').value = data.name;
+                    document.getElementById('profile-goals').value = data.learning_goals;
+                    document.getElementById('profile-level').value = data.skill_level;
+                    document.getElementById('header-student-name').innerText = data.name;
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Documents upload
+        async function uploadDocument(input) {
+            if (!input.files || input.files.length === 0) return;
+            const file = input.files[0];
+            const statusDiv = document.getElementById('upload-status');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            statusDiv.innerText = `⏳ Đang tải và lập chỉ mục: ${file.name}...`;
+            statusDiv.className = 'upload-status mt-2 text-xs text-blue-400';
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    statusDiv.innerText = `✅ Đã xử lý thành công file ${file.name}`;
+                    statusDiv.className = 'upload-status mt-2 text-xs text-green-400';
+                    input.value = ''; // clear input
+                    loadDocuments();
+                } else {
+                    const data = await response.json();
+                    statusDiv.innerText = `❌ Lỗi: ${data.detail || 'Không thể xử lý file'}`;
+                    statusDiv.className = 'upload-status mt-2 text-xs text-red-400';
+                }
+            } catch (error) {
+                statusDiv.innerText = '❌ Lỗi kết nối.';
+                statusDiv.className = 'upload-status mt-2 text-xs text-red-400';
+                console.error(error);
+            }
+        }
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/upload/documents', { cache: 'no-store' });
+                if (response.ok) {
+                    const docs = await response.json();
+                    const list = document.getElementById('documents-list');
+                    list.innerHTML = '';
+
+                    if (docs.length === 0) {
+                        list.innerHTML = '<li class="empty-placeholder text-center py-2">Chưa có tài liệu nào.</li>';
+                        return;
+                    }
+
+                    docs.forEach(doc => {
+                        const li = document.createElement('li');
+                        li.className = 'item-list-row';
+                        li.innerHTML = `
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" title="${doc.filename}">${doc.filename}</span>
+                            <span class="badge badge-accent">${doc.file_type}</span>
+                        `;
+                        list.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Learning Roadmap
+        async function generateRoadmap(event) {
+            event.preventDefault();
+            const subjectInput = document.getElementById('roadmap-subject');
+            const subject = subjectInput.value.trim();
+            if (!subject) return;
+
+            subjectInput.value = '';
+
+            const stepsList = document.getElementById('roadmap-steps-list');
+            stepsList.innerHTML = '<li class="text-center py-4 text-sm text-blue-400">⏳ Đang lập lộ trình bằng AI...</li>';
+
+            try {
+                const response = await fetch('/api/roadmap/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ subject: subject })
+                });
+
+                if (response.ok) {
+                    loadRoadmap();
+                    appendChatMessage('ai', `🗺️ Lộ trình học tập môn **${subject}** vừa được tạo! Xem chi tiết ở cột bên phải.`);
+                } else {
+                    alert('Lỗi khi thiết kế lộ trình.');
+                    loadRoadmap();
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Lỗi kết nối.');
+                loadRoadmap();
+            }
+        }
+
+        async function loadRoadmap() {
+            try {
+                // Load roadmap steps
+                const response = await fetch('/api/roadmap', { cache: 'no-store' });
+                // Load score-weighted progress
+                const progressRes = await fetch('/api/schedule/progress', { cache: 'no-store' });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const progressData = progressRes.ok ? await progressRes.json() : null;
+
+                    const stepsList = document.getElementById('roadmap-steps-list');
+                    const progressContainer = document.getElementById('roadmap-progress-container');
+
+                    if (!data.roadmap || data.steps.length === 0) {
+                        stepsList.innerHTML = '<li class="empty-placeholder text-center py-4 text-sm">Chưa có lộ trình học tập nào được tạo. Hãy nhập môn học ở trên hoặc nói chuyện với AI Tutor để tạo lộ trình!</li>';
+                        progressContainer.style.display = 'none';
+                        return;
+                    }
+
+                    stepsList.innerHTML = '';
+                    progressContainer.style.display = 'block';
+
+                    let previousCompleted = true; // First step is always allowed
+                    data.steps.forEach((step, idx) => {
+                        const isCompleted = step.status === 'completed';
+                        const isInProgress = step.status === 'in_progress';
+                        const score = step.score;
+                        const isAllowed = previousCompleted;
+
+                        // Score badge
+                        let scoreBadgeHtml = '';
+                        if (score !== null && score !== undefined) {
+                            const scoreClass = score >= 8 ? 'high' : score >= 5 ? 'mid' : 'low';
+                            const scoreIcon = score >= 8 ? '⭐' : score >= 5 ? '📊' : '🔄';
+                            scoreBadgeHtml = `<span class="score-badge ${scoreClass}">${scoreIcon} ${score}/10</span>`;
+                        } else {
+                            scoreBadgeHtml = `<span class="score-badge">_ điểm</span>`;
+                        }
+
+                        const statusIcon = isCompleted ? '✅' : '❌';
+
+                        const li = document.createElement('li');
+                        li.className = `roadmap-step-row ${isCompleted ? 'completed' : isInProgress ? 'in-progress' : ''} ${!isAllowed ? 'locked' : ''}`;
+                        li.innerHTML = `
+                            <div class="step-checkbox-container" style="display:flex;align-items:center;justify-content:center;font-size:1.2rem;">
+                                ${statusIcon}
+                            </div>
+                            <div class="step-details flex-1">
+                                <h4 class="step-title">${step.title} ${!isAllowed ? '🔒' : ''}</h4>
+                                <p class="step-desc text-xs opacity-80">${step.description}</p>
+                                <div style="display:flex;align-items:center;gap:4px;margin-top:3px">
+                                    <span class="step-time text-xs opacity-75">⏱️ ${step.estimated_hours}h</span>
+                                    ${scoreBadgeHtml}
+                                </div>
+                            </div>
+                        `;
+                        stepsList.appendChild(li);
+                        
+                        previousCompleted = isCompleted;
+                    });
+
+                    // Update progress bar (score-weighted)
+                    const percent = progressData ? progressData.percent : 0;
+                    const completedSteps = progressData ? progressData.completed_steps : 0;
+                    const totalSteps = progressData ? progressData.total_steps : data.steps.length;
+
+                    document.getElementById('roadmap-progress-percent').innerText = `${percent}%`;
+                    const fillEl = document.getElementById('roadmap-progress-fill');
+                    fillEl.style.width = `${percent}%`;
+                    fillEl.classList.add('score-weighted');
+
+                    // Progress detail row
+                    let detailRow = document.getElementById('progress-detail-row');
+                    if (!detailRow) {
+                        detailRow = document.createElement('div');
+                        detailRow.id = 'progress-detail-row';
+                        detailRow.className = 'progress-detail-row';
+                        document.getElementById('roadmap-progress-container').appendChild(detailRow);
+                    }
+                    detailRow.innerHTML = `
+                        <span>✅ ${completedSteps}/${totalSteps} bước hoàn thành</span>
+                        <span>📊 Điểm trung bình</span>
+                    `;
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function toggleStep(topic, completed) {
+            try {
+                const response = await fetch('/api/roadmap/step/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        topic: topic,
+                        completed: completed
+                    })
+                });
+
+                if (response.ok) {
+                    loadRoadmap(); // Refresh progress
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Homework Scheduling
+        async function scheduleHomework(event) {
+            event.preventDefault();
+            const topic = document.getElementById('schedule-topic').value.trim();
+            const timeVal = document.getElementById('schedule-time').value;
+            if (!topic || !timeVal) return;
+
+            // Clear input fields
+            document.getElementById('schedule-topic').value = '';
+            document.getElementById('schedule-time').value = '';
+
+            try {
+                const response = await fetch('/api/schedule', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        topic: topic,
+                        scheduled_time: new Date(timeVal).toISOString()
+                    })
+                });
+
+                if (response.ok) {
+                    loadScheduledJobs();
+                    loadChatHistory();
+                } else {
+                    const data = await response.json();
+                    alert(`Lỗi: ${data.detail || 'Không thể đặt lịch'}`);
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Lỗi kết nối mạng.');
+            }
+        }
+
+        async function loadScheduledJobs() {
+            try {
+                const response = await fetch('/api/schedule', { cache: 'no-store' });
+                if (response.ok) {
+                    const jobs = await response.json();
+                    const list = document.getElementById('scheduled-jobs-list');
+                    list.innerHTML = '';
+
+                    if (jobs.length === 0) {
+                        list.innerHTML = '<li class="empty-placeholder text-center py-2">Chưa có bài tập nào được lên lịch.</li>';
+                        return;
+                    }
+
+                    jobs.forEach(job => {
+                        const li = document.createElement('li');
+                        li.className = 'item-list-row flex justify-between items-center';
+                        li.id = `job-row-${job.id}`;
+
+                        const dateFormatted = new Date(job.scheduled_time).toLocaleString('vi-VN');
+
+                        let badgeClass = 'badge-pending';
+                        if (job.status === 'sent') badgeClass = 'badge-success';
+                        if (job.status === 'cancelled') badgeClass = 'badge-cancelled';
+
+                        li.innerHTML = `
+                            <div class="job-info">
+                                <p class="job-topic text-sm font-semibold">${job.topic}</p>
+                                <p class="job-time text-xs opacity-70">🕒 ${dateFormatted}</p>
+                            </div>
+                            <div class="job-action flex items-center gap-2">
+                                <span class="badge ${badgeClass}">${job.status}</span>
+                                ${job.status === 'pending' ? `<button onclick="cancelJob(${job.id})" class="btn-icon text-red-500" title="Hủy bỏ">✕</button>` : ''}
+                            </div>
+                        `;
+                        list.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function cancelJob(jobId) {
+            if (!confirm('Bạn có chắc muốn hủy lịch giao bài tập này?')) return;
+            try {
+                const response = await fetch(`/api/schedule/${jobId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadScheduledJobs();
+                } else {
+                    alert('Không thể hủy bài tập.');
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // ── Auto Schedule Config ───────────────────────────
+
+        async function loadScheduleConfig() {
+            try {
+                const res = await fetch('/api/schedule/config', { cache: 'no-store' });
+                if (!res.ok) return;
+                const cfg = await res.json();
+
+                const toggle = document.getElementById('auto-schedule-toggle');
+                const badge = document.getElementById('schedule-status-badge');
+                const summary = document.getElementById('schedule-summary');
+                const fields = document.getElementById('schedule-config-fields');
+                const timeInput = document.getElementById('auto-hw-time');
+
+                toggle.checked = cfg.is_active;
+                timeInput.value = cfg.homework_time || '20:00';
+
+                if (cfg.is_active) {
+                    fields.style.display = 'block';
+                    badge.className = 'schedule-active-badge on';
+                    badge.textContent = '▶ Đang chạy';
+                    summary.textContent = `${cfg.homework_time} · ${cfg.homework_frequency_label}`;
+                    selectFreq(cfg.homework_frequency, false); // highlight correct pill without saving
+                } else {
+                    fields.style.display = 'none';
+                    badge.className = 'schedule-active-badge off';
+                    badge.textContent = '⏸ Tắt';
+                    summary.textContent = 'Chưa bật';
+                }
+
+                selectedFreq = cfg.homework_frequency || 1;
+            } catch (e) {
+                console.error('loadScheduleConfig error', e);
+            }
+        }
+
+        function handleAutoToggle(checkbox) {
+            const fields = document.getElementById('schedule-config-fields');
+            const badge = document.getElementById('schedule-status-badge');
+            const summary = document.getElementById('schedule-summary');
+
+            if (checkbox.checked) {
+                fields.style.display = 'block';
+                badge.className = 'schedule-active-badge on';
+                badge.textContent = '▶ Đang chạy';
+                summary.textContent = 'Đang cấu hình...';
+                // Ensure a frequency is selected
+                if (!document.querySelector('.freq-pill.selected')) {
+                    selectFreq(selectedFreq || 1, false);
+                }
+            } else {
+                fields.style.display = 'none';
+                badge.className = 'schedule-active-badge off';
+                badge.textContent = '⏸ Tắt';
+                summary.textContent = 'Chưa bật';
+                // Immediately save frequency=0 to disable
+                saveScheduleConfig(true);
+            }
+        }
+
+        function selectFreq(freq, shouldSave = false) {
+            selectedFreq = freq;
+            document.querySelectorAll('.freq-pill').forEach(pill => {
+                if (parseInt(pill.dataset.freq) === freq) {
+                    pill.classList.add('selected');
+                } else {
+                    pill.classList.remove('selected');
+                }
+            });
+            if (shouldSave) saveScheduleConfig();
+        }
+
+        async function saveScheduleConfig(forceOff = false) {
+            const toggle = document.getElementById('auto-schedule-toggle');
+            const timeInput = document.getElementById('auto-hw-time');
+            const btn = document.getElementById('save-schedule-btn');
+
+            const frequency = forceOff ? 0 : (toggle && toggle.checked ? (selectedFreq || 1) : 0);
+            const time = timeInput ? timeInput.value : '20:00';
+
+            try {
+                const res = await fetch('/api/schedule/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        homework_time: time,
+                        homework_frequency: frequency
+                    })
+                });
+
+                if (res.ok) {
+                    const cfg = await res.json();
+                    const summary = document.getElementById('schedule-summary');
+                    const badge = document.getElementById('schedule-status-badge');
+
+                    if (cfg.is_active) {
+                        badge.className = 'schedule-active-badge on';
+                        badge.textContent = '▶ Đang chạy';
+                        summary.textContent = `${cfg.homework_time} · ${cfg.homework_frequency_label}`;
+                    } else {
+                        badge.className = 'schedule-active-badge off';
+                        badge.textContent = '⏸ Tắt';
+                        summary.textContent = 'Chưa bật';
+                    }
+                    loadChatHistory();
+
+                    // Flash button success
+                    if (btn) {
+                        btn.textContent = '✅ Đã lưu!';
+                        btn.classList.add('btn-flash-success');
+                        setTimeout(() => {
+                            btn.textContent = '💾 Lưu lịch học';
+                            btn.classList.remove('btn-flash-success');
+                        }, 2000);
+                    }
+                } else {
+                    alert('Không thể lưu cài đặt lịch học.');
+                }
+            } catch (e) {
+                console.error('saveScheduleConfig error', e);
+            }
+        }
+    </script>
+</body>
+
+</html>

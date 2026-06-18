@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboarding - AI Tutor Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="flex-center min-h-screen body-gradient">
+    <div class="card onboarding-card max-w-md w-full p-8 text-center glassmorphism animate-fade-in">
+        <div class="brand-logo mb-6">
+            <span class="logo-emoji">🎓</span>
+            <h1 class="logo-title">AI Tutor MVP</h1>
+            <p class="logo-subtitle">Nền tảng Gia sư Trí tuệ nhân tạo Cá nhân hóa</p>
+        </div>
+        
+        <!-- Toggle Tabs -->
+        <div class="tabs-container mb-6">
+            <button id="btn-register" class="tab-btn active" onclick="switchTab('register')">Đăng ký</button>
+            <button id="btn-login" class="tab-btn" onclick="switchTab('login')">Đăng nhập</button>
+        </div>
+
+        <form action="/onboarding" method="POST" class="form-container">
+            <input type="hidden" id="action-type" name="action" value="register">
+
+            <div class="form-group text-left" id="group-name">
+                <label for="name" class="form-label">Họ và Tên</label>
+                <input type="text" id="name" name="name" class="form-input" placeholder="Nguyễn Văn A">
+            </div>
+
+            <div class="form-group text-left">
+                <label for="email" class="form-label">Địa chỉ Email</label>
+                <input type="email" id="email" name="email" class="form-input" required placeholder="name@domain.com">
+            </div>
+
+            <div class="form-group text-left" id="group-goals">
+                <label for="learning_goals" class="form-label">Mục tiêu học tập</label>
+                <textarea id="learning_goals" name="learning_goals" class="form-textarea" rows="3" placeholder="Ví dụ: Học lập trình Python cơ bản, giải thuật, cấu trúc dữ liệu..."></textarea>
+            </div>
+
+            <div class="form-group text-left" id="group-level">
+                <label for="skill_level" class="form-label">Trình độ hiện tại</label>
+                <select id="skill_level" name="skill_level" class="form-select">
+                    <option value="Beginner">Mới bắt đầu (Beginner)</option>
+                    <option value="Intermediate">Trung cấp (Intermediate)</option>
+                    <option value="Advanced">Nâng cao (Advanced)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full mt-6">Bắt đầu học ngay</button>
+        </form>
+    </div>
+
+    <script>
+        function switchTab(type) {
+            const btnRegister = document.getElementById('btn-register');
+            const btnLogin = document.getElementById('btn-login');
+            const actionType = document.getElementById('action-type');
+            const groupName = document.getElementById('group-name');
+            const groupGoals = document.getElementById('group-goals');
+            const groupLevel = document.getElementById('group-level');
+            const nameInput = document.getElementById('name');
+
+            if (type === 'login') {
+                btnRegister.classList.remove('active');
+                btnLogin.classList.add('active');
+                actionType.value = 'login';
+                groupName.style.display = 'none';
+                groupGoals.style.display = 'none';
+                groupLevel.style.display = 'none';
+                nameInput.removeAttribute('required');
+            } else {
+                btnRegister.classList.add('active');
+                btnLogin.classList.remove('active');
+                actionType.value = 'register';
+                groupName.style.display = 'block';
+                groupGoals.style.display = 'block';
+                groupLevel.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

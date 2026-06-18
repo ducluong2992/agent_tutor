@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  ai_tutor:
+    build: .
+    container_name: ai_tutor_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/storage:/app/backend/storage
+    env_file:
+      - .env
+    restart: unless-stopped

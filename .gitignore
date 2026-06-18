@@ -1,0 +1,62 @@
+# Environment (Chỉ bỏ .env, KHÔNG bỏ .env.example để làm mẫu cấu hình)
+.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing & Cache
+.pytest_cache/
+.deepeval/
+.cache/
+.mypy_cache/
+.ruff_cache/
+
+# Database (Bỏ cơ sở dữ liệu SQLite cục bộ)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs & Test Output
+*.log
+logs/
+test_out.txt
+test_out2.txt
+test_out3.txt
+test_out*.txt
+
+# Compressed Archives (Bỏ file nén như backend.rar)
+*.rar
+*.zip
+*.7z
+*.tar.gz
+*.gz
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Storage & Assets (Bỏ thư mục lưu trữ tài liệu tải lên cục bộ)
+backend/storage/
+chroma_db/
+vector_store/
+faiss_index/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
