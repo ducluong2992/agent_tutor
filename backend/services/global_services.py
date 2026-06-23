@@ -4,3 +4,4 @@ tutor_service = None
 rag_service = None
 roadmap_service = None
 scheduler_service = None
+llm_service = None

@@ -11,10 +11,20 @@ class Student(Base):
     linking_code = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=True)
+    grade_level = Column(Integer, nullable=True) # Lớp từ 1 đến 12
     learning_goals = Column(Text, nullable=True)
     skill_level = Column(String, default="Beginner")
     homework_time = Column(String, default="20:00")
     homework_frequency = Column(Integer, default=0)  # 0 = manual, 1 = daily, 2 = every 2 days, etc.
+    theory_time = Column(String, nullable=True)
+    practice_time = Column(String, nullable=True)
+    exam_time = Column(String, nullable=True)
+    learning_frequency = Column(String, nullable=True)
+    # API configuration (stored per-user for dynamic key management)
+    gemini_api_key = Column(String, nullable=True)
+    openrouter_api_key = Column(String, nullable=True)
+    openai_api_key = Column(String, nullable=True)
+    preferred_core = Column(String, default="gemini")  # 'gemini' | 'openrouter' | 'openai'
     created_at = Column(DateTime, default=datetime.utcnow)
 
     messages = relationship("ChatMessage", back_populates="student", cascade="all, delete-orphan")
@@ -51,7 +61,7 @@ class Roadmap(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
-    subject = Column(String, nullable=False)
+    subject = Column(String, nullable=False, default="Toán")
     content = Column(Text, nullable=False)  # JSON-serialized list of roadmap steps
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -65,6 +75,9 @@ class Progress(Base):
     topic = Column(String, nullable=False)
     status = Column(String, default="not_started")  # 'not_started', 'in_progress', 'completed'
     score = Column(Float, nullable=True)  # Best score achieved for this topic
+    theory_completed = Column(Boolean, default=False)
+    exercise_completed = Column(Boolean, default=False)
+    scheduled_date = Column(String, nullable=True)
     attempt_count = Column(Integer, default=0)  # Number of homework attempts
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

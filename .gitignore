@@ -56,6 +56,9 @@ chroma_db/
 vector_store/
 faiss_index/
 
+# Runtime LLM config (cấu hình qua giao diện, không commit key)
+data/llm_config.json
+
 # OS-specific
 .DS_Store
 Thumbs.db

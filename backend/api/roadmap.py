@@ -13,6 +13,7 @@ class RoadmapGenerateRequest(BaseModel):
 
 class StepToggleRequest(BaseModel):
     topic: str
+    task_type: Optional[str] = None  # 'theory', 'exercise'
     completed: bool
 
 @router.post("/generate")
@@ -37,7 +38,9 @@ async def generate_roadmap(
         steps = json.loads(roadmap.content)
         if not isinstance(steps, list):
             steps = []
-        for step in steps:
+        import datetime
+        base_date = datetime.date.today() + datetime.timedelta(days=1)
+        for index, step in enumerate(steps):
             if not isinstance(step, dict) or "title" not in step:
                 continue
             # Check if progress record already exists
@@ -49,9 +52,15 @@ async def generate_roadmap(
                 progress = Progress(
                     student_id=student_id_int,
                     topic=step["title"],
-                    status="not_started"
+                    status="not_started",
+                    scheduled_date=(base_date + datetime.timedelta(days=index)).isoformat()
                 )
                 db.add(progress)
+        db.commit()
+        
+        from backend.database.models import ChatMessage
+        ai_msg = f"🗺️ **Lộ trình học tập môn {payload.subject} vừa được tạo!** Xem chi tiết ở cột bên phải.\n\n👉 **Bây giờ, hãy cùng thiết lập lịch học cho bạn nhé!**\n- Bạn muốn học theo chu kỳ nào (Ví dụ: Hằng ngày, cách 1 ngày, Thứ 2-4-6)?\n- Khung giờ học cụ thể cho mỗi phần trong ngày:\n  + Mấy giờ học lý thuyết?\n  + Mấy giờ làm bài tập vận dụng?\n  + Mấy giờ làm bài kiểm tra?"
+        db.add(ChatMessage(student_id=student_id_int, sender="ai", message=ai_msg))
         db.commit()
         
         return {
@@ -101,11 +110,19 @@ def get_roadmap(
         
         status = progress.status if progress else "not_started"
         score = progress.score if progress else None
+        theory_completed = progress.theory_completed if progress else False
+        exercise_completed = progress.exercise_completed if progress else False
+        scheduled_date = progress.scheduled_date if progress else None
+        updated_at = progress.updated_at.isoformat() if progress and progress.updated_at else None
         
         enriched_steps.append({
             **step,
             "status": status,
-            "score": score
+            "score": score,
+            "theory_completed": theory_completed,
+            "exercise_completed": exercise_completed,
+            "scheduled_date": scheduled_date,
+            "updated_at": updated_at
         })
         
     return {
@@ -132,17 +149,21 @@ def toggle_step(
         Progress.topic == payload.topic
     ).first()
     
-    new_status = "completed" if payload.completed else "not_started"
-    
-    if progress:
-        progress.status = new_status
-    else:
+    if not progress:
         progress = Progress(
             student_id=student_id_int,
             topic=payload.topic,
-            status=new_status
+            status="not_started"
         )
         db.add(progress)
         
+    if payload.task_type == "theory":
+        progress.theory_completed = payload.completed
+    elif payload.task_type == "exercise":
+        progress.exercise_completed = payload.completed
+    else:
+        new_status = "completed" if payload.completed else "not_started"
+        progress.status = new_status
+        
     db.commit()
-    return {"status": "success", "topic": payload.topic, "new_status": new_status}
+    return {"status": "success", "topic": payload.topic}

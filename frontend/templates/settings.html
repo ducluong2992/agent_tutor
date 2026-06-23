@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <link rel="icon" href="/static/images/home1.png" type="image/png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tutor - Cài đặt</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="body-gradient min-h-screen">
+    <!-- Navbar -->
+    <header class="navbar glassmorphism">
+        <div class="nav-brand">
+            <span class="nav-title">AI Tutor</span>
+        </div>
+        <div class="nav-user">
+            <button class="btn btn-secondary btn-sm" onclick="window.location.href='/'">Quay lại Dashboard</button>
+            <a href="/logout" class="btn btn-secondary btn-sm">Đăng xuất</a>
+        </div>
+    </header>
+
+    <main class="settings-container max-w-md mx-auto mt-6">
+        <div class="card glassmorphism p-8">
+            <h2 class="card-title" style="font-size: 1.5rem; margin-bottom: 1.5rem;">Cài đặt hệ thống</h2>
+            
+            <div class="tabs-container mb-6">
+                <button class="tab-btn active" onclick="switchTab('profile-tab')">Hồ sơ</button>
+                <button class="tab-btn" onclick="switchTab('api-tab')">API Keys</button>
+                <button class="tab-btn" onclick="switchTab('tele-tab')">Telegram</button>
+            </div>
+
+            <!-- Profile Tab -->
+            <div id="profile-tab" class="settings-tab">
+                <form id="profile-form" onsubmit="saveProfile(event)">
+                    <div class="form-group">
+                        <label class="form-label">Tên hiển thị</label>
+                        <input type="text" id="profile-name" class="form-input" value="{{ student.name }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mục tiêu học tập</label>
+                        <textarea id="profile-goals" class="form-textarea" rows="2">{{ student.learning_goals }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Trình độ</label>
+                        <select id="profile-level" class="form-select">
+                            <option value="Beginner" {% if student.skill_level=='Beginner' %}selected{% endif %}>Mới bắt đầu (Beginner)</option>
+                            <option value="Intermediate" {% if student.skill_level=='Intermediate' %}selected{% endif %}>Trung cấp (Intermediate)</option>
+                            <option value="Advanced" {% if student.skill_level=='Advanced' %}selected{% endif %}>Nâng cao (Advanced)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-full mt-4">Cập nhật thông tin</button>
+                </form>
+            </div>
+
+            <!-- API Tab -->
+            <div id="api-tab" class="settings-tab hidden">
+                <form id="api-form" onsubmit="saveApiSettings(event)">
+                    <div class="form-group">
+                        <label class="form-label">Nhà cung cấp LLM (LLM_PROVIDER)</label>
+                        <select id="ai-core-select" class="form-select" onchange="handleCoreChange()">
+                            <option value="gemini">Gemini</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="mock">Mock (offline, không cần API key)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group api-key-group" id="gemini-group">
+                        <label class="form-label">Gemini API Key</label>
+                        <input type="text" id="gemini-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
+                        <div class="text-xs mt-1" id="gemini-status"></div>
+                        <label class="form-label mt-2">Gemini Model</label>
+                        <input type="text" id="gemini-model" class="form-input" placeholder="gemini-2.5-flash">
+                    </div>
+
+                    <div class="form-group api-key-group hidden" id="openai-group">
+                        <label class="form-label">OpenAI API Key</label>
+                        <input type="text" id="openai-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
+                        <div class="text-xs mt-1" id="openai-status"></div>
+                        <label class="form-label mt-2">OpenAI Model</label>
+                        <input type="text" id="openai-model" class="form-input" placeholder="gpt-4o-mini">
+                    </div>
+
+                    <div class="form-group api-key-group hidden" id="openrouter-group">
+                        <label class="form-label">OpenRouter API Key</label>
+                        <input type="text" id="openrouter-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
+                        <div class="text-xs mt-1" id="openrouter-status"></div>
+                        <label class="form-label mt-2">OpenRouter Model</label>
+                        <input type="text" id="openrouter-model" class="form-input" placeholder="google/gemma-3-27b-it:free">
+                    </div>
+
+                    <div id="mock-info" class="text-sm hidden" style="color: #64748b; margin-bottom: 1rem;">
+                        Chế độ Mock dùng phản hồi giả lập, không gọi API bên ngoài.
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-sm w-full mt-4">Lưu cấu hình AI</button>
+                </form>
+            </div>
+
+            <!-- Telegram Tab -->
+            <div id="tele-tab" class="settings-tab hidden">
+                <div class="telegram-instructions text-sm mb-3">
+                    <p>Truy cập Telegram Bot của bạn và gửi mã liên kết để đồng bộ lịch bài tập và trò chuyện:</p>
+                </div>
+                <div class="linking-code-box flex-center mb-3" style="text-align: center; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <code id="linking-code-display" style="font-size: 1.5rem; color: #0f172a;">{{ student.linking_code }}</code>
+                </div>
+                <div class="telegram-status text-sm text-center">
+                    Trạng thái bot:
+                    {% if student.telegram_id %}
+                    <span class="status-linked">Đã liên kết (ID: {{ student.telegram_id }})</span>
+                    {% else %}
+                    <span class="status-unlinked">Chưa liên kết</span>
+                    {% endif %}
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            loadApiSettings();
+        });
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.settings-tab').forEach(t => t.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.remove('hidden');
+            event.target.classList.add('active');
+        }
+
+        async function saveProfile(event) {
+            event.preventDefault();
+            const name = document.getElementById('profile-name').value;
+            const goals = document.getElementById('profile-goals').value;
+            const level = document.getElementById('profile-level').value;
+
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, learning_goals: goals, skill_level: level })
+                });
+
+                if (response.ok) {
+                    alert('Đã cập nhật hồ sơ thành công!');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function handleCoreChange() {
+            const core = document.getElementById('ai-core-select').value;
+            document.querySelectorAll('.api-key-group').forEach(el => el.classList.add('hidden'));
+            document.getElementById('mock-info').classList.add('hidden');
+            if (core === 'mock') {
+                document.getElementById('mock-info').classList.remove('hidden');
+                return;
+            }
+            const group = document.getElementById(core + '-group');
+            if (group) group.classList.remove('hidden');
+        }
+
+        async function loadApiSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('ai-core-select').value = data.llm_provider || data.preferred_core || 'mock';
+                    handleCoreChange();
+
+                    document.getElementById('gemini-status').innerText = data.gemini_api_key_set ? `Đã lưu: ${data.gemini_api_key_masked}` : 'Chưa thiết lập';
+                    document.getElementById('openai-status').innerText = data.openai_api_key_set ? `Đã lưu: ${data.openai_api_key_masked}` : 'Chưa thiết lập';
+                    document.getElementById('openrouter-status').innerText = data.openrouter_api_key_set ? `Đã lưu: ${data.openrouter_api_key_masked}` : 'Chưa thiết lập';
+                    
+                    if (data.gemini_api_key_set) document.getElementById('gemini-key').value = data.gemini_api_key_masked;
+                    if (data.openai_api_key_set) document.getElementById('openai-key').value = data.openai_api_key_masked;
+                    if (data.openrouter_api_key_set) document.getElementById('openrouter-key').value = data.openrouter_api_key_masked;
+
+                    document.getElementById('gemini-model').value = data.gemini_model || '';
+                    document.getElementById('openai-model').value = data.openai_model || '';
+                    document.getElementById('openrouter-model').value = data.openrouter_model || '';
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveApiSettings(e) {
+            e.preventDefault();
+            const payload = {
+                llm_provider: document.getElementById('ai-core-select').value
+            };
+            const gemini = document.getElementById('gemini-key').value;
+            const openai = document.getElementById('openai-key').value;
+            const openrouter = document.getElementById('openrouter-key').value;
+
+            if (gemini && !gemini.includes('****')) payload.gemini_api_key = gemini;
+            if (openai && !openai.includes('****')) payload.openai_api_key = openai;
+            if (openrouter && !openrouter.includes('****')) payload.openrouter_api_key = openrouter;
+
+            const geminiModel = document.getElementById('gemini-model').value.trim();
+            const openaiModel = document.getElementById('openai-model').value.trim();
+            const openrouterModel = document.getElementById('openrouter-model').value.trim();
+            if (geminiModel) payload.gemini_model = geminiModel;
+            if (openaiModel) payload.openai_model = openaiModel;
+            if (openrouterModel) payload.openrouter_model = openrouterModel;
+
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    alert('Lưu cấu hình AI thành công!');
+                    window.location.href = '/';
+                } else {
+                    const err = await res.json();
+                    alert(err.detail || 'Lưu cấu hình thất bại');
+                }
+            } catch (e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>

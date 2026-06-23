@@ -7,20 +7,25 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.api_provider = os.getenv("LLM_PROVIDER", "openrouter").lower()  # 'gemini', 'openai', 'openrouter', or 'mock'
+        self.gemini_client = None
+        self.openai_client = None
+        self.openrouter_client = None
+        self.reload_config()
+
+    def reload_config(self):
+        """Re-read LLM settings from environment (after .env update from UI)."""
+        self.api_provider = os.getenv("LLM_PROVIDER", "mock").lower()
         self.openai_key = os.getenv("OPENAI_API_KEY")
         self.gemini_key = os.getenv("GEMINI_API_KEY")
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY")
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
-        
-        # Initialize ALL available clients (not just the selected provider)
-        # This enables automatic cascade fallback when the primary provider fails
+
         self.gemini_client = None
         self.openai_client = None
         self.openrouter_client = None
-        
+
         if self.gemini_key:
             try:
                 import google.generativeai as genai
@@ -29,7 +34,7 @@ class LLMService:
                 logger.info("Gemini LLM Client initialized successfully.")
             except ImportError:
                 logger.warning("google-generativeai package not installed.")
-        
+
         if self.openai_key:
             try:
                 from openai import OpenAI
@@ -37,7 +42,7 @@ class LLMService:
                 logger.info("OpenAI LLM Client initialized successfully.")
             except ImportError:
                 logger.warning("openai package not installed.")
-        
+
         if self.openrouter_key:
             try:
                 from openai import OpenAI
@@ -48,6 +53,15 @@ class LLMService:
                 logger.info(f"OpenRouter LLM Client initialized with model: {self.openrouter_model}")
             except ImportError:
                 logger.warning("openai package not installed.")
+
+        from backend.services.config_service import _mask_key, _terminal_log
+        logger.info(f"LLM provider active: {self.api_provider}")
+        _terminal_log(
+            f"[LLM Config] Da reload - provider: {self.api_provider} | "
+            f"Gemini: {_mask_key(self.gemini_key or '') or '-'} | "
+            f"OpenAI: {_mask_key(self.openai_key or '') or '-'} | "
+            f"OpenRouter: {_mask_key(self.openrouter_key or '') or '-'}"
+        )
 
     async def generate_response(self, system_prompt: str, user_prompt: str, chat_history: List[Dict[str, str]] = None) -> str:
         if self.api_provider == "mock":
@@ -176,7 +190,8 @@ class LLMService:
                     "type": "schedule_homework",
                     "params": {
                         "topic": topic,
-                        "scheduled_time": scheduled_time
+                        "scheduled_time": scheduled_time,
+                        "job_type": "free_practice"
                     }
                 }
             }, ensure_ascii=False)

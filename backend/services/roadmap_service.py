@@ -1,8 +1,9 @@
 import json
 import logging
 from typing import List, Dict, Any
+import os
 from sqlalchemy.orm import Session
-from backend.database.models import Roadmap, Student
+from backend.database.models import Roadmap, Student, Document
 from backend.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -18,30 +19,53 @@ class RoadmapService:
 
         goals = student.learning_goals or "General learning"
         level = student.skill_level or "Beginner"
+        grade_level = student.grade_level if student.grade_level else "Không xác định"
+
+        # Fetch uploaded documents for context
+        documents = db.query(Document).filter(Document.student_id == student_id).all()
+        doc_context = ""
+        for doc in documents:
+            if os.path.exists(doc.file_path):
+                try:
+                    with open(doc.file_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                        # Limit each doc to 5000 chars to avoid overwhelming context
+                        doc_context += f"\n--- Tài liệu: {doc.filename} ---\n{text[:5000]}\n"
+                except Exception as e:
+                    logger.error(f"Failed to read document {doc.filename}: {e}")
+        
+        if not doc_context:
+            doc_context = "Không có tài liệu nào được tải lên."
 
         # Ask LLM to generate a structured roadmap
         prompt = f"""
-Bạn là một chuyên gia thiết kế chương trình học (Curriculum Designer).
+Bạn là một chuyên gia thiết kế chương trình học (Curriculum Designer) môn Toán.
 Hãy tạo một lộ trình học tập chi tiết, đa dạng và cụ thể cho học viên với các thông tin sau:
 - Môn học/Chủ đề (Subject): {subject}
 - Trình độ hiện tại (Skill Level): {level}
+- Lớp (Grade Level): {grade_level}
 - Mục tiêu học tập (Learning Goals): {goals}
 
+Tài liệu tham khảo (hãy bám sát nội dung tài liệu này để tạo lộ trình nếu có):
+{doc_context}
+
 Yêu cầu bắt buộc:
-1. KHÔNG sử dụng các tiêu đề chung chung kiểu như "Introduction to X", "Core Concepts of X", "Advanced X". 
-2. PHẢI chia thành các bài học cụ thể, đi sâu vào từng khía cạnh của môn học (Ví dụ với Tiếng Anh lớp 1: "Bài 1: Làm quen bảng chữ cái tiếng Anh", "Bài 2: Chào hỏi cơ bản và giới thiệu bản thân", "Bài 3: Từ vựng về màu sắc và con vật", v.v.).
-3. Tạo ra từ 5 đến 10 bước (steps) chi tiết và bám sát vào mục tiêu học tập.
-4. Ngôn ngữ của lộ trình phải phù hợp với ngôn ngữ của môn học (ưu tiên Tiếng Việt nếu môn học bằng Tiếng Việt).
-5. Output MUST BE ONLY a raw JSON list of objects.
+1. Lộ trình bao gồm nhiều Task, trong đó mỗi Task tương ứng với 1 Unit (Bài học). Hãy tạo ra từ 5 đến 10 Unit chi tiết.
+2. Tiêu đề từng bài học (title) BẮT BUỘC phải theo định dạng "Unit 1: [Tiêu đề môn Toán]", "Unit 2: [Tiêu đề môn Toán]", v.v. (Ví dụ: "Unit 1: Phép cộng trừ", "Unit 2: Phân số").
+3. Nội dung mô tả (description) ở dưới BẮT BUỘC viết bằng Tiếng Việt. Bạn phải ghi rõ rằng mỗi Unit sẽ bao gồm 3 phần độc lập:
+   - Học lý thuyết
+   - Bài tập vận dụng (5 câu): Trắc nghiệm, Tự luận giải toán
+   - Kiểm tra (8 câu): Trắc nghiệm, Tự luận giải toán
+4. Output MUST BE ONLY a raw JSON list of objects.
 
 Mỗi step trong JSON list phải chứa các key sau:
-1. "title": Tiêu đề bài học ngắn gọn nhưng cụ thể.
-2. "description": Mô tả chi tiết nội dung sẽ học trong bài này.
+1. "title": Tiêu đề bài học theo định dạng Unit X.
+2. "description": Mô tả chi tiết nội dung (Tiếng Việt) và nhắc lại cấu trúc 3 phần.
 3. "estimated_hours": Thời gian ước tính để hoàn thành (số nguyên, ví dụ: 2, 4).
 
 Ví dụ định dạng đúng:
 [
-    {{"title": "Làm quen với bảng chữ cái", "description": "Học cách phát âm và nhận diện 26 chữ cái tiếng Anh.", "estimated_hours": 2}}
+    {{"title": "Unit 1: Phép tính cơ bản", "description": "Học về các phép cộng trừ cơ bản.", "estimated_hours": 2}}
 ]
 
 Do not include any formatting, markdown wrappers (like ```json ... ```), or text other than the raw JSON list of objects.

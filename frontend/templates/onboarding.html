@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +8,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body class="flex-center min-h-screen body-gradient">
     <div class="card onboarding-card max-w-md w-full p-8 text-center glassmorphism animate-fade-in">
         <div class="brand-logo mb-6">
-            <span class="logo-emoji">🎓</span>
-            <h1 class="logo-title">AI Tutor MVP</h1>
-            <p class="logo-subtitle">Nền tảng Gia sư Trí tuệ nhân tạo Cá nhân hóa</p>
+            <img src="/static/images/logo2.png" alt="AI Math Tutor"
+                style="height: 70px; width: auto; margin: 0 auto 10px auto; display: block;">
+            <p class="logo-subtitle">Nền tảng Gia sư Toán học Trí tuệ nhân tạo</p>
         </div>
-        
+
         <!-- Toggle Tabs -->
         <div class="tabs-container mb-6">
             <button id="btn-register" class="tab-btn active" onclick="switchTab('register')">Đăng ký</button>
@@ -35,8 +37,28 @@
             </div>
 
             <div class="form-group text-left" id="group-goals">
-                <label for="learning_goals" class="form-label">Mục tiêu học tập</label>
-                <textarea id="learning_goals" name="learning_goals" class="form-textarea" rows="3" placeholder="Ví dụ: Học lập trình Python cơ bản, giải thuật, cấu trúc dữ liệu..."></textarea>
+                <label for="learning_goals" class="form-label">Mục tiêu học Toán</label>
+                <textarea id="learning_goals" name="learning_goals" class="form-textarea" rows="2"
+                    placeholder="Ví dụ: Ôn thi Đại học, Toán cơ bản lớp 5, Luyện giải toán trắc nghiệm..."></textarea>
+            </div>
+
+            <div class="form-group text-left" id="group-grade">
+                <label for="grade_level" class="form-label">Lớp (1-12)</label>
+                <select id="grade_level" name="grade_level" class="form-select">
+                    <option value="1">Lớp 1</option>
+                    <option value="2">Lớp 2</option>
+                    <option value="3">Lớp 3</option>
+                    <option value="4">Lớp 4</option>
+                    <option value="5">Lớp 5</option>
+                    <option value="6">Lớp 6</option>
+                    <option value="7">Lớp 7</option>
+                    <option value="8">Lớp 8</option>
+                    <option value="9">Lớp 9</option>
+                    <option value="10">Lớp 10</option>
+                    <option value="11">Lớp 11</option>
+                    <option value="12">Lớp 12</option>
+                    <option value="0">Khác (Đại học/Đi làm)</option>
+                </select>
             </div>
 
             <div class="form-group text-left" id="group-level">
@@ -68,6 +90,8 @@
                 actionType.value = 'login';
                 groupName.style.display = 'none';
                 groupGoals.style.display = 'none';
+                document.getElementById('group-grade').style.display = 'none';
+                groupLevel.style.display = 'none';
                 groupLevel.style.display = 'none';
                 nameInput.removeAttribute('required');
             } else {
@@ -76,9 +100,11 @@
                 actionType.value = 'register';
                 groupName.style.display = 'block';
                 groupGoals.style.display = 'block';
+                document.getElementById('group-grade').style.display = 'block';
                 groupLevel.style.display = 'block';
             }
         }
     </script>
 </body>
+
 </html>

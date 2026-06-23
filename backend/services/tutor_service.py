@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple
 from sqlalchemy.orm import Session
 
-from backend.database.models import Student, ChatMessage, Progress, HomeworkSubmission
+from backend.database.models import Student, ChatMessage, Progress, HomeworkSubmission, Roadmap
 from backend.services.llm_service import LLMService
 from backend.services.memory_service import MemoryService
 from backend.services.rag_service import RAGService
@@ -41,6 +41,7 @@ class TutorService:
         student_name = student.name if student else "Học sinh"
         skill_level = student.skill_level if student else "Beginner"
         learning_goals = student.learning_goals if student else "General learning"
+        grade_level = student.grade_level if student and student.grade_level else "Not specified"
 
         # 3. Retrieve RAG context if applicable
         rag_context = ""
@@ -63,82 +64,128 @@ class TutorService:
             homework_schedule_text = f"Giao bài lúc {student.homework_time}, tần suất: {freq_text}"
 
         system_prompt = f"""
-You are an enthusiastic, flexible, and supportive AI Tutor. Your student's details:
+You are an AI Math Tutor (Gia sư Toán học) for a student with the following profile:
 - Name: {student_name}
 - Current Level: {skill_level}
+- Grade Level (Lớp): {grade_level}
 - Learning Goals: {learning_goals}
-- Auto Homework Schedule: {homework_schedule_text}
+- Auto Exam Schedule: {homework_schedule_text}
 
-Guidelines:
-- Speak naturally, dynamically, and flexibly like a real human tutor. Avoid being rigid, robotic, or using generic templates.
-- Tailor your explanations to their skill level ({skill_level}).
-- Refer to their uploaded documents if relevant context is provided.
-- Respond in Vietnamese.
-- **IMPORTANT**: If the student has no auto homework schedule set (homework_frequency=0) and they haven't mentioned scheduling yet, you should PROACTIVELY ask them in a friendly way when they want to receive daily homework (e.g. "Bạn muốn nhận bài tập tự động lúc mấy giờ mỗi ngày?"). Do this once, not every message.
-- If the student requests or expresses intent to perform an action (e.g. schedule homework, create a roadmap, update their goals, set auto homework schedule, or grade homework), you MUST output the corresponding action JSON. At the same time, in your text response ("reply"), guide them naturally:
-  * To schedule a one-time homework: Use the "Lịch bài tập đã hẹn" form in the right sidebar.
-  * To set up AUTOMATIC daily/recurring homework: Just tell the AI directly (e.g. "giao bài lúc 8h tối mỗi ngày") — the AI will update your schedule automatically.
-  * To create a learning roadmap: Use the "Lộ trình học tập" form in the right sidebar, type the subject, and click "Tạo".
-  * To update learning profile/goals: Edit fields in the "Thông tin học tập" form in the left sidebar.
-  * To upload study documents for RAG: Click "Tải tài liệu lên" in the left sidebar.
-  * To link Telegram: Copy the code from "Liên kết Telegram" card in the left sidebar, then send `/start <linking_code>` to the bot.
+## Your Role
+You are a dedicated, personalized Math tutor. You:
+1. TEACH Math (theory, formulas, problem-solving methods, examples)
+2. GIVE practice exercises (multiple choice, problem solving)
+3. GRADE submitted answers and update roadmap progress
+4. Support unlimited revision if the student asks to review or practice more
 
-CRITICAL: You MUST respond in a valid JSON object only. Do not wrap it in markdown block like ```json ```.
-The JSON object must have EXACTLY this structure:
+## Teaching Flow for Each Unit — 3 DISTINCT CONTENT TYPES:
+
+### 1. LY THUYET (Theory — HOC SINH DOC VA GHI NHO, KHONG phai bai tap)
+When a student asks for "ly thuyet" / "bai hoc" / "xem ly thuyet":
+- Provide READING/LEARNING content, NOT exercises, NOT questions to answer
+- Include: concepts, formulas, step-by-step example problem solving
+- End with: "Hay doc va ghi nho phan ly thuyet nay. Khi san sang hay noi 'lam bai tap' de luyen tap!"
+- Do NOT ask student to answer questions in theory phase
+
+### 2. BAI TAP VAN DUNG (Practice — luyen tap, KHONG tinh diem lo trinh)
+When a student asks for "bai tap" / "luyen tap" / "practice exercises":
+- Provide 5 diverse math exercises.
+- Instructions in Vietnamese, no answers yet
+- When grading practice: use action "grade_homework" — does NOT update roadmap score
+
+### 3. BAI KIEM TRA (Exam — tinh diem LO TRINH, mo khoa Unit tiep theo)
+When a student says "kiem tra" / "thi" / "bai kiem tra" / when exam is sent by scheduler:
+- Provide 8 math questions covering the full unit
+- When grading: use action "grade_exam" — SAVES score to roadmap, unlocks next Unit if score >= 5
+
+CRITICAL GRADING RULE:
+- grade_exam: ONLY for official KIEM TRA → saves to roadmap
+- grade_homework: for BAI TAP VAN DUNG or student self-initiated practice → does NOT touch roadmap
+
+## Language Rules
+- Always respond in Vietnamese
+- IMPORTANT: DO NOT use LaTeX formatting like $$, \[, \], \(, or \) for math formulas. Use plain text and standard unicode characters instead (e.g. x^2, a/b, +, -, *, /, =).
+- Format your reply beautifully using Markdown. Use proper line breaks (double newline \n\n) between paragraphs and use bullet points (-) for lists.
+- Be warm, encouraging and natural — like a real human tutor
+
+CRITICAL: You MUST respond ONLY as a valid JSON object (no markdown wrapper).
+Structure:
 {{
-  "reply": "Your actual text response here. Use formatting (like markdown headings, bullet points, code blocks) inside this string.",
-  "action": null or an object
+  "reply": "Your full tutor response here using markdown for formatting.",
+  "action": null or an action object
 }}
 
-Supported actions:
-1. Schedule Homework:
-   If the student asks to schedule a one-time homework (e.g. "giao bài tập cho tôi vào ngày mai lúc 8h tối", "schedule python homework in 2 minutes"), parse the time and topic.
-   Action format:
-   {{
-     "type": "schedule_homework",
-     "params": {{
-       "topic": "Python basics",
-       "scheduled_time": "2026-06-17T20:00:00"  // ISO 8601 string in the future. Today's date is: {datetime.now().isoformat()}
-     }}
-   }}
-   NOTE: If they don't specify a date, schedule for tomorrow. If they ask for "now" or "in 1 minute", schedule it 1 minute from now.
+## Supported Actions:
+
+1. Schedule Homework (one-time):
+{{
+  "type": "schedule_homework",
+  "params": {{
+    "topic": "Unit 1: Phép tính cơ bản",
+    "scheduled_time": "2026-06-20T20:00:00",
+    "job_type": "free_practice"
+  }}
+}}
+NOTE: job_type can be "theory", "practice", "exam", or "free_practice". If student just asks for exercises/practice freely, use "free_practice". Today's datetime is {datetime.now().isoformat()}. If no date given, schedule for tomorrow.
 
 2. Generate Roadmap:
-   If they want a study roadmap for a topic (e.g., "lập lộ trình học Python", "roadmap for web design"):
-   Action format:
-   {{
-     "type": "generate_roadmap",
-     "params": {{
-       "subject": "Python"
-     }}
-   }}
+{{
+  "type": "generate_roadmap",
+  "params": {{
+    "subject": "Toán"
+  }}
+}}
 
-3. Update Profile (including auto homework schedule):
-   If they want to update goals, level, OR set up automatic recurring homework (e.g. "tôi muốn làm bài tập lúc 8h tối mỗi ngày", "đổi lịch sang 21:30 cách 2 ngày", "tắt tự động giao bài", "giao bài tập cho tôi hàng ngày lúc 7 giờ sáng"):
-   Action format:
-   {{
-     "type": "update_profile",
-     "params": {{
-       "learning_goals": "Machine Learning",
-       "skill_level": "Intermediate",
-       "homework_time": "20:00",
-       "homework_frequency": 1
-     }}
-   }}
-   NOTE: homework_time is "HH:MM" 24h format. homework_frequency: 0=tắt tự động, 1=hàng ngày, 2=cách 1 ngày, 3=cách 2 ngày, 7=hàng tuần. Only include params that are being changed.
+3. Update Profile / Auto Schedule:
+{{
+  "type": "update_profile",
+  "params": {{
+    "learning_goals": "...",
+    "skill_level": "Beginner",
+    "learning_frequency": "Hàng ngày",
+    "theory_time": "19:00",
+    "practice_time": "19:30",
+    "exam_time": "20:00"
+  }}
+}}
+NOTE: When student provides learning frequency and specific times for theory, practice, and exam, update them using this action. Only include changed params. IMPORTANT: Time MUST be in strictly 'HH:MM' 24-hour format (e.g. '09:59', '10:00', '14:30'). Do NOT use '9h59', '2h30'.
 
-4. Grade Homework:
-   If the student is answering/submitting a homework (e.g. "đây là bài làm của em", "câu 1: ..., câu 2: ...", writing answers to your previous homework questions), grade their work and output:
-   Action format:
-   {{
-     "type": "grade_homework",
-     "params": {{
-       "topic": "Python basics",
-       "score": 8.5,
-       "feedback": "Detailed Vietnamese feedback on what was done well and what needs improvement"
-     }}
-   }}
-   NOTE: score is a float 0.0 to 10.0. Be fair, constructive, and encouraging. If score < 5, the topic stays 'in_progress' so the student can retry.
+4. Grade EXAM (Bài KIỂM TRA — khi học sinh nộp bài kiểm tra chính thức):
+Dùng action này KHI VÀ CHỈ KHI học sinh nộp bài KIỂM TRA (bài do scheduler gửi hoặc bài kiểm tra cuối unit).
+Điểm này sẽ được LƯU VÀO LỘ TRÌNH và quyết định việc mở khóa Unit tiếp theo.
+{{
+  "type": "grade_exam",
+  "params": {{
+    "topic": "Unit 1: Phép tính cơ bản",
+    "score": 8.5,
+    "feedback": "Chi tiết phản hồi bằng tiếng Việt: những gì đúng, những gì cần cải thiện"
+  }}
+}}
+NOTE: score is 0.0–10.0. If score >= 5: Unit is completed, student unlocks next Unit. If score < 5: Unit stays in_progress, student must retry.
+
+5. Grade PRACTICE (Bài TẬP VẬN DỤNG hoặc bài tập tự phát):
+Dùng action này khi học sinh làm bài TẬP VẬN DỤNG (practice) hoặc bài tập do học sinh tự yêu cầu.
+Điểm này KHÔNG lưu vào lộ trình, chỉ là phản hồi luyện tập.
+{{
+  "type": "grade_homework",
+  "params": {{
+    "topic": "Unit 1: Phép tính cơ bản",
+    "score": 8.5,
+    "feedback": "Chi tiết phản hồi bằng tiếng Việt: những gì đúng, những gì cần cải thiện"
+  }}
+}}
+NOTE: Điểm bài tập vận dụng chỉ dùng để khuyến khích học sinh, KHÔNG cập nhật trạng thái lộ trình.
+
+6. Update Subtask (when student says they finished theory or exercises):
+{{
+  "type": "update_subtask",
+  "params": {{
+    "topic": "Unit 1: Phép tính cơ bản",
+    "task_type": "theory",
+    "completed": true
+  }}
+}}
+NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says they finished.
 """
 
         # Add RAG context to the user prompt
@@ -251,9 +298,12 @@ Supported actions:
                 if run_time <= datetime.now():
                     run_time = datetime.now() + timedelta(minutes=1)
                 
-                job_id = await self.scheduler_service.schedule_homework(student_id, topic, run_time)
-                executed_action_log = {"type": "schedule_homework", "job_id": job_id, "topic": topic, "time": run_time.isoformat()}
-                reply += f"\n\n⏰ **Đã lên lịch bài tập về nhà!** Chủ đề: *{topic}* vào lúc {run_time.strftime('%Y-%m-%d %H:%M:%S')}."
+                job_type = params.get("job_type", "free_practice")
+                job_id = await self.scheduler_service.schedule_homework(student_id, topic, run_time, job_type=job_type)
+                executed_action_log = {"type": "schedule_homework", "job_id": job_id, "topic": topic, "time": run_time.isoformat(), "job_type": job_type}
+                
+                job_type_vn = "bài tập tự do" if job_type == "free_practice" else "bài tập vận dụng" if job_type == "practice" else "bài kiểm tra" if job_type == "exam" else "bài học lý thuyết"
+                reply += f"\n\n⏰ **Đã lên lịch {job_type_vn}!** Chủ đề: *{topic}* vào lúc {run_time.strftime('%Y-%m-%d %H:%M:%S')}."
                 
             elif action_type == "generate_roadmap":
                 subject = params.get("subject", "General Subject")
@@ -276,7 +326,7 @@ Supported actions:
                 db.commit()
                 
                 executed_action_log = {"type": "generate_roadmap", "roadmap_id": roadmap.id, "subject": subject}
-                reply += f"\n\n🗺️ **Lộ trình học {subject} đã được tạo thành công!** Bạn có thể xem chi tiết trong phần Dashboard."
+                reply += f"\n\n🗺️ **Lộ trình học {subject} đã được tạo thành công!** Bạn có thể xem chi tiết trong phần Dashboard.\n\n👉 **Bây giờ, hãy cùng thiết lập lịch học cho bạn nhé!**\n- Bạn muốn học theo chu kỳ nào (Ví dụ: Hằng ngày, cách 1 ngày, Thứ 2-4-6)?\n- Khung giờ học cụ thể cho mỗi phần trong ngày:\n  + Mấy giờ học lý thuyết?\n  + Mấy giờ làm bài tập vận dụng?\n  + Mấy giờ làm bài kiểm tra?"
 
             elif action_type == "update_profile":
                 updated_fields = {}
@@ -286,45 +336,52 @@ Supported actions:
                 if "skill_level" in params:
                     student.skill_level = params["skill_level"]
                     updated_fields["skill_level"] = params["skill_level"]
+                if "grade_level" in params:
+                    student.grade_level = params["grade_level"]
+                    updated_fields["grade_level"] = params["grade_level"]
                 if "name" in params:
                     student.name = params["name"]
                     updated_fields["name"] = params["name"]
                 if "homework_time" in params:
                     student.homework_time = params["homework_time"]
                     updated_fields["homework_time"] = params["homework_time"]
-                if "homework_frequency" in params:
-                    student.homework_frequency = int(params["homework_frequency"])
-                    updated_fields["homework_frequency"] = params["homework_frequency"]
+                if "learning_frequency" in params:
+                    student.learning_frequency = params["learning_frequency"]
+                    updated_fields["learning_frequency"] = params["learning_frequency"]
+                for t_field in ["theory_time", "practice_time", "exam_time"]:
+                    if t_field in params:
+                        val = str(params[t_field]).strip()
+                        val = val.lower().replace('h', ':').replace('g', ':')
+                        if ':' in val:
+                            parts = val.split(':')
+                            try:
+                                h, m = int(parts[0]), int(parts[1])
+                                val = f"{h:02d}:{m:02d}"
+                            except ValueError:
+                                pass
+                        setattr(student, t_field, val)
+                        updated_fields[t_field] = val
                 db.commit()
                 executed_action_log = {"type": "update_profile", "updated": updated_fields}
                 schedule_msg = ""
-                if "homework_time" in updated_fields or "homework_frequency" in updated_fields:
-                    freq = student.homework_frequency
-                    freq_map = {0: "tắt", 1: "hàng ngày", 2: "cách 1 ngày", 3: "cách 2 ngày", 7: "hàng tuần"}
-                    freq_text = freq_map.get(freq, f"mỗi {freq} ngày")
-                    schedule_msg = f" Lịch tự giao bài: **{student.homework_time}**, tần suất **{freq_text}**."
-                reply += f"\n\n⚙️ **Thông tin học tập đã được cập nhật!**{schedule_msg}"
+                if "learning_frequency" in updated_fields or "theory_time" in updated_fields:
+                    freq_text = student.learning_frequency or "chưa rõ"
+                    schedule_msg = f"\nLịch học của bạn: Tần suất **{freq_text}**.\n- Lý thuyết: {student.theory_time or 'chưa rõ'}\n- Bài tập: {student.practice_time or 'chưa rõ'}\n- Kiểm tra: {student.exam_time or 'chưa rõ'}"
+                reply += f"\n\n⚙️ **Thông tin đã được cập nhật!**{schedule_msg}"
 
-            elif action_type == "grade_homework":
+            elif action_type == "grade_exam":
+                # ✅ KIỂM TRA CHÍNH THỨC — lưu điểm vào roadmap, quyết định mở khóa Unit tiếp theo
                 topic = params.get("topic", "General review")
                 score = float(params.get("score", 0.0))
                 feedback = params.get("feedback", "")
 
-                # Find matching progress record (by topic name, fuzzy)
-                from backend.database.models import Roadmap
+
                 progress_record = db.query(Progress).filter(
                     Progress.student_id == student_id,
                     Progress.topic.ilike(f"%{topic}%")
                 ).first()
-                # Fallback: first incomplete progress record
-                if not progress_record:
-                    progress_record = db.query(Progress).filter(
-                        Progress.student_id == student_id,
-                        Progress.status != "completed"
-                    ).order_by(Progress.id.asc()).first()
 
                 if progress_record:
-                    # Log this submission in HomeworkSubmission table
                     submission = HomeworkSubmission(
                         student_id=student_id,
                         progress_id=progress_record.id,
@@ -334,7 +391,6 @@ Supported actions:
                     )
                     db.add(submission)
 
-                    # Update attempt count
                     progress_record.attempt_count = (progress_record.attempt_count or 0) + 1
 
                     # Keep best score
@@ -344,11 +400,15 @@ Supported actions:
                     # Update status based on score
                     if score >= 5.0:
                         progress_record.status = "completed"
+                        if self.scheduler_service:
+                            await self.scheduler_service.schedule_post_task_report(
+                                student_id, progress_record.topic, datetime.now() + timedelta(minutes=2)
+                            )
                     else:
-                        progress_record.status = "in_progress"  # Allow retry
+                        progress_record.status = "in_progress"
 
                     db.commit()
-                    executed_action_log = {"type": "grade_homework", "topic": progress_record.topic, "score": score}
+                    executed_action_log = {"type": "grade_exam", "topic": progress_record.topic, "score": score}
 
                     # Build score-weighted progress percentage
                     roadmap_obj = db.query(Roadmap).filter(
@@ -356,6 +416,8 @@ Supported actions:
                     ).order_by(Roadmap.created_at.desc()).first()
 
                     progress_pct = 0
+                    completed_in_roadmap = 0
+                    total_steps = 0
                     if roadmap_obj:
                         try:
                             all_steps = json.loads(roadmap_obj.content)
@@ -366,7 +428,6 @@ Supported actions:
                         ).all()}
                         weighted_sum = 0.0
                         total_steps = len(all_steps)
-                        completed_in_roadmap = 0
                         for s in all_steps:
                             p = all_progress.get(s.get("title", ""))
                             if p and p.status == "completed":
@@ -379,7 +440,6 @@ Supported actions:
                         if total_steps > 0:
                             progress_pct = round((weighted_sum / total_steps) * 100, 1)
 
-                        # Check milestone: every 3 completions or all done
                         is_milestone = total_steps > 0 and (
                             (completed_in_roadmap % 3 == 0) or (completed_in_roadmap == total_steps)
                         )
@@ -390,44 +450,161 @@ Supported actions:
                             reply += f"\n\n{milestone_report}"
 
                     score_bar = "🟩" * int(score) + "⬜" * (10 - int(score))
-                    status_text = "✅ Hoàn thành" if score >= 5.0 else "🔄 Cần ôn thêm (có thể thử lại)"
-                    reply += f"\n\n📝 **Kết quả chấm điểm:** {score}/10 {score_bar}\n**Chủ đề:** {progress_record.topic}\n**Trạng thái:** {status_text}\n**Tiến độ lộ trình:** {progress_pct}%\n\n💬 *Phản hồi:* {feedback}"
+                    status_text = "✅ Hoàn thành — Mở khóa Unit tiếp theo!" if score >= 5.0 else "🔄 Chưa đạt (< 5 điểm) — Cần ôn lại và kiểm tra lại"
+                    reply += f"\n\n📋 **KẾT QUẢ KIỂM TRA:** {score}/10 {score_bar}\n**Chủ đề:** {progress_record.topic}\n**Trạng thái:** {status_text}\n**Tiến độ lộ trình:** {progress_pct}%\n\n💬 *Nhận xét:* {feedback}"
                 else:
-                    reply += f"\n\n📝 **Điểm số:** {score}/10. Rất tiếc, tôi không tìm thấy phần bài học tương ứng để cập nhật tiến độ lộ trình."
+                    # Kiểm tra không tìm thấy trong roadmap — vẫn ghi nhận
+                    submission = HomeworkSubmission(
+                        student_id=student_id,
+                        progress_id=None,
+                        topic=topic,
+                        score=score,
+                        feedback=feedback
+                    )
+                    db.add(submission)
+                    db.commit()
+                    executed_action_log = {"type": "grade_exam", "topic": topic, "score": score, "roadmap_linked": False}
+                    score_bar = "🟩" * int(score) + "⬜" * (10 - int(score))
+                    reply += f"\n\n📋 **KẾT QUẢ KIỂM TRA ({topic})**: {score}/10 {score_bar}\n{feedback}"
+
+            elif action_type == "grade_homework":
+                # 📝 BÀI TẬP VẬN DỤNG / TỰ PHÁT — KHÔNG lưu điểm vào roadmap
+                topic = params.get("topic", "General review")
+                score = float(params.get("score", 0.0))
+                feedback = params.get("feedback", "")
+
+                # Chỉ lưu vào HomeworkSubmission để theo dõi, không cập nhật Progress/roadmap
+                submission = HomeworkSubmission(
+                    student_id=student_id,
+                    progress_id=None,
+                    topic=topic,
+                    score=score,
+                    feedback=feedback
+                )
+                db.add(submission)
+                db.commit()
+                executed_action_log = {"type": "grade_homework", "topic": topic, "score": score, "roadmap_linked": False}
+                score_bar = "🟩" * int(score) + "⬜" * (10 - int(score))
+                reply += f"\n\n📝 **Kết quả bài tập ({topic})**: {score}/10 {score_bar}\n💬 *Phản hồi:* {feedback}\n\n*(Bài tập vận dụng không tính vào điểm lộ trình. Chỉ bài **Kiểm tra** mới cập nhật tiến độ!)*"
+
+            elif action_type == "update_subtask":
+                topic = params.get("topic")
+                task_type = params.get("task_type")
+                completed = params.get("completed", True)
+                
+
+                progress_record = db.query(Progress).filter(
+                    Progress.student_id == student_id,
+                    Progress.topic.ilike(f"%{topic}%")
+                ).first()
+                
+                if progress_record:
+                    if task_type == 'theory':
+                        progress_record.theory_completed = completed
+                        reply += f"\n\n✅ Đã đánh dấu hoàn thành phần **Học lí thuyết** cho bài {progress_record.topic}."
+                    elif task_type == 'exercise':
+                        progress_record.exercise_completed = completed
+                        reply += f"\n\n✅ Đã đánh dấu hoàn thành phần **Làm bài tập** cho bài {progress_record.topic}."
+                    db.commit()
+                    executed_action_log = {"type": "update_subtask", "topic": progress_record.topic, "task_type": task_type}
 
         # 9. Save AI response to DB
         self.memory_service.add_message(db, student_id, "ai", reply)
 
         return reply, executed_action_log
 
-    async def generate_homework(self, student_id: int, topic: str) -> str:
+    async def generate_unit_test(self, student_id: int, topic: str) -> str:
+        """Generate a unit exam for the current roadmap Unit."""
         from backend.database.db import SessionLocal
         db = SessionLocal()
         try:
             student = db.query(Student).filter(Student.id == student_id).first()
-            subject = student.learning_goals if student and student.learning_goals else "General knowledge"
             level = student.skill_level if student and student.skill_level else "Beginner"
+            grade = student.grade_level if student and student.grade_level else "Unknown"
         finally:
             db.close()
 
-        prompt = f"""
-Generate a homework assignment for a student on the topic: "{topic}".
-The student is currently learning: "{subject}" at a "{level}" level. 
-The questions MUST test their knowledge about "{subject}" regarding the topic "{topic}".
-Do NOT test them on the Vietnamese language itself unless "{subject}" is Vietnamese.
+        prompt = f"""Bạn là một giáo viên Toán. Hãy tạo một **bài kiểm tra đánh giá** cho học sinh.
 
-The homework should consist of:
-1. 3 questions (mix of multiple-choice and short answer).
-2. Clear instructions in Vietnamese.
-3. A small hint for each question in Vietnamese.
+Thông tin học sinh:
+- Lớp: {grade}
+- Trình độ: {level}
+- Nội dung kiểm tra: {topic}
 
-Do NOT generate answers, just the assignment questions.
-Output the homework in a friendly tutor tone in Vietnamese.
-End with a reminder that the student should reply with their answers to receive grading.
+Yêu cầu bài kiểm tra:
+1. Gồm 5 câu hỏi đa dạng: trắc nghiệm, giải toán tự luận.
+2. Hướng dẫn rõ ràng bằng tiếng Việt.
+3. Thang điểm 10, mỗi câu 2 điểm.
+4. Phù hợp với trình độ {level} của học sinh lớp {grade}.
+5. KHÔNG đưa đáp án.
+6. LƯU Ý QUAN TRỌNG: KHÔNG sử dụng định dạng LaTeX như $$, \[, \] hay \( \). Hãy dùng văn bản thuần túy (e.g., x^2, a/b, +, -, *, /, =).
+
+Kết thúc bằng dòng nhắc: "📌 Hãy trả lời tất cả các câu hỏi trên để được chấm điểm và cập nhật tiến độ lộ trình!"
 """
         try:
             response = await self.llm_service.generate_response(
-                system_prompt="You are a helpful and detailed tutor. Output markdown-formatted homework assignments in Vietnamese.",
+                system_prompt="You are a Math teacher. Create a math exam in Vietnamese. DO NOT use LaTeX formatting like $$, \[, \( for math formulas. Use plain text. Return plain text only, no JSON.",
+                user_prompt=prompt
+            )
+            response = response.strip()
+            # Strip JSON wrapper if LLM returns JSON
+            if response.startswith("{") and response.endswith("}"):
+                try:
+                    data = json.loads(response)
+                    if "reply" in data:
+                        return data["reply"]
+                except:
+                    pass
+            return f"📝 **BÀI KIỂM TRA: {topic}**\n\n{response}"
+        except Exception as e:
+            logger.error(f"Failed to generate unit test: {e}")
+            return f"""📝 **BÀI KIỂM TRA: {topic}**
+
+**Câu 1 (2đ):** Tính: 2 + 3 = ?
+
+**Câu 2 (2đ):** Điền số thích hợp: 5 + ... = 10
+
+**Câu 3 (2đ):** Một hình vuông có cạnh 4cm. Tính chu vi.
+
+**Câu 4 (2đ):** Giải phương trình: x + 2 = 5
+
+**Câu 5 (2đ):** Đúng hay Sai: 10 - 3 = 6.
+
+📌 Hãy trả lời tất cả các câu hỏi trên để được chấm điểm và cập nhật tiến độ lộ trình!"""
+
+    async def generate_theory(self, student_id: int, topic: str) -> str:
+        """Generate theory/lesson content for a unit — to be READ by the student, NOT an exercise."""
+        from backend.database.db import SessionLocal
+        db = SessionLocal()
+        try:
+            student = db.query(Student).filter(Student.id == student_id).first()
+            level = student.skill_level if student and student.skill_level else "Beginner"
+            grade = student.grade_level if student and student.grade_level else "Unknown"
+        finally:
+            db.close()
+
+        prompt = f"""Bạn là một giáo viên Toán. Hãy soạn **BÀI HỌC LÝ THUYẾT** cho học sinh.
+
+Thông tin học sinh:
+- Lớp: {grade}
+- Trình độ: {level}
+- Chủ đề bài học: {topic}
+
+Yêu cầu bài học lý thuyết:
+1. Đây là phần để HỌC SINH ĐỌC VÀ GHI NHỚ, KHÔNG phải bài tập.
+2. Nội dung phải liên quan chủ đề của bài học {topic} gồm:
+   - 📚 **Khái niệm / Định lý**: giải thích rõ ràng, dễ hiểu bằng tiếng Việt
+   - 📖 **Công thức toán học**: trình bày dạng văn bản đơn giản (không dùng LaTeX, dùng x^2, a/b, ...)
+   - 💡 **Ví dụ minh họa**: 3-5 câu ví dụ thực tế có giải thích từng bước
+   - 🗣️ **Mẹo ghi nhớ** (nếu có): các quy tắc đặc biệt
+3. Viết hướng dẫn và giải thích bằng Tiếng Việt.
+4. Phù hợp với trình độ {level} của học sinh lớp {grade}.
+5. KHÔNG sử dụng định dạng LaTeX như $$, \[, \] hay \( \).
+6. Cuối bài học thêm dòng: "✅ Đọc và ghi nhớ phần lý thuyết trên. Khi sẵn sàng, hãy báo để làm bài tập vận dụng!"
+"""
+        try:
+            response = await self.llm_service.generate_response(
+                system_prompt="You are a Math teacher. Create a theory/lesson content in Vietnamese for students to read and learn from. DO NOT use LaTeX formatting like $$, \[, \( for math formulas. Use plain text. Return plain text only, no JSON.",
                 user_prompt=prompt
             )
             response = response.strip()
@@ -438,21 +615,111 @@ End with a reminder that the student should reply with their answers to receive 
                         return data["reply"]
                 except:
                     pass
-            return response
+            return f"📚 **BÀI HỌC LÝ THUYẾT: {topic}**\n\n{response}"
         except Exception as e:
-            logger.error(f"Failed to generate homework: {e}")
-            return f"""**Bài tập về nhà: {topic}**
+            logger.error(f"Failed to generate theory: {e}")
+            return f"""📚 **BÀI HỌC LÝ THUYẾT: {topic}**
 
-Câu 1: Hãy giải thích khái niệm cơ bản của {topic}.
-*Gợi ý: Nhớ lại những gì đã học và dùng lời của mình.*
+📖 **Khái niệm:**
+- Phép cộng là phép tính gộp hai hay nhiều số lại với nhau.
+- Phép trừ là phép tính bớt đi một số khỏi một số khác.
 
-Câu 2: Cho một ví dụ thực tế về việc áp dụng {topic}.
-*Gợi ý: Nghĩ đến các tình huống thực tế trong cuộc sống.*
+📖 **Công thức cơ bản:**
+- a + b = c
+- a - b = c
 
-Câu 3: Viết một đoạn mã/phân tích ngắn áp dụng {topic}.
-*Gợi ý: Tham khảo tài liệu đã học.*
+💡 **Ví dụ minh họa:**
+1. 2 + 3 = 5 (Có 2 quả táo, thêm 3 quả táo thành 5 quả).
+2. 5 - 2 = 3 (Có 5 quả táo, ăn 2 quả còn 3 quả).
 
-📌 Hãy trả lời bài tập này trực tiếp trong chat để được chấm điểm!"""
+✅ Đọc và ghi nhớ phần lý thuyết trên. Khi sẵn sàng, hãy báo để làm bài tập vận dụng!"""
+
+    async def generate_free_practice(self, student_id: int, topic: str) -> str:
+        """Generate a free practice exercise requested ad-hoc via chat."""
+        from backend.database.db import SessionLocal
+        db = SessionLocal()
+        try:
+            student = db.query(Student).filter(Student.id == student_id).first()
+            level = student.skill_level if student and student.skill_level else "Beginner"
+            grade = student.grade_level if student and student.grade_level else "Unknown"
+        finally:
+            db.close()
+
+        prompt = f"""Bạn là một gia sư Toán thân thiện. Hãy tạo **BÀI TẬP TỰ DO Luyện Tập** cho học sinh theo yêu cầu.
+
+Thông tin học sinh:
+- Lớp: {grade}
+- Trình độ: {level}
+- Nội dung luyện tập: {topic}
+
+Yêu cầu:
+1. Gồm 3-5 câu hỏi thú vị, có thể kết hợp trắc nghiệm, giải toán hoặc đố vui nhẹ nhàng.
+2. Hướng dẫn rõ ràng bằng tiếng Việt với giọng điệu động viên, khích lệ.
+3. KHÔNG đưa đáp án trước.
+4. Phù hợp với trình độ {level} của học sinh lớp {grade}.
+5. KHÔNG gán mác là "Bài kiểm tra" hay "Bài tập vận dụng" của lộ trình. Hãy gọi nó là "Bài tập tự do".
+6. LƯU Ý QUAN TRỌNG: KHÔNG sử dụng định dạng LaTeX như $$, \[, \] hay \( \). Hãy dùng văn bản thuần túy.
+"""
+        try:
+            response = await self.llm_service.generate_response(
+                system_prompt="You are a Math tutor. Create a free practice exercise in Vietnamese. DO NOT use LaTeX formatting like $$, \[, \( for math formulas. Use plain text. Return plain text only, no JSON.",
+                user_prompt=prompt
+            )
+            return response.strip()
+        except Exception as e:
+            return f"❌ Lỗi khi tạo bài tập tự do: {e}"
+
+    async def generate_practice(self, student_id: int, topic: str) -> str:
+        """Generate 5-question practice exercises (NOT saved to roadmap score)."""
+        from backend.database.db import SessionLocal
+        db = SessionLocal()
+        try:
+            student = db.query(Student).filter(Student.id == student_id).first()
+            level = student.skill_level if student and student.skill_level else "Beginner"
+            grade = student.grade_level if student and student.grade_level else "Unknown"
+        finally:
+            db.close()
+
+        prompt = f"""Bạn là một giáo viên Toán. Hãy tạo **BÀI TẬP VẬN DỤNG** cho học sinh.
+
+Thông tin học sinh:
+- Lớp: {grade}
+- Trình độ: {level}
+- Nội dung luyện tập: {topic}
+
+Yêu cầu bài tập vận dụng:
+1. Gồm đúng 5 câu hỏi đa dạng: trắc nghiệm, giải toán tự luận.
+2. Hướng dẫn rõ ràng bằng tiếng Việt.
+3. KHÔNG đưa đáp án.
+4. Phù hợp với trình độ {level} của học sinh lớp {grade}.
+5. KHÔNG sử dụng định dạng LaTeX như $$, \[, \] hay \( \). Hãy dùng văn bản thuần túy.
+6. Cuối thêm dòng: "📌 Hãy trả lời 5 câu trên. Bài tập vận dụng không tính điểm lộ trình nhưng giúp bạn luyện tập!"
+"""
+        try:
+            response = await self.llm_service.generate_response(
+                system_prompt="You are a Math teacher. Create practice exercises in Vietnamese. DO NOT use LaTeX formatting like $$, \[, \( for math formulas. Use plain text. Return plain text only, no JSON.",
+                user_prompt=prompt
+            )
+            response = response.strip()
+            if response.startswith("{") and response.endswith("}"):
+                try:
+                    data = json.loads(response)
+                    if "reply" in data:
+                        return data["reply"]
+                except:
+                    pass
+            return f"✏️ **BÀI TẬP VẬN DỤNG: {topic}**\n\n{response}"
+        except Exception as e:
+            return f"✏️ **BÀI TẬP VẬN DỤNG: {topic}**\n\n**Câu 1:** Tính 5 + 5 = ?\n**Câu 2:** Điền số: 10 - ... = 2\n**Câu 3:** 2 * 3 = ?\n**Câu 4:** Giải x + 1 = 10\n**Câu 5:** Đúng hay sai: 3 + 3 = 7\n\n📌 Hãy trả lời 5 câu trên. Bài tập vận dụng không tính điểm lộ trình nhưng giúp bạn luyện tập!"
+
+    async def generate_exam(self, student_id: int, topic: str) -> str:
+        """Generate 8-question exam — score WILL be saved to roadmap."""
+        return await self.generate_unit_test(student_id, topic)
+
+    async def generate_homework(self, student_id: int, topic: str) -> str:
+        """Alias for generate_unit_test — called by scheduler for exam type."""
+        return await self.generate_unit_test(student_id, topic)
+
 
     async def generate_milestone_report(self, db: Session, student_id: int, milestone_topic: str, completed_count: int, total_count: int) -> str:
         """Generate a milestone progress report when student completes a section of their roadmap."""
@@ -489,62 +756,10 @@ Hãy viết một báo cáo chặng đường ngắn gọn (5-8 dòng) bằng ti
                 return f"🎉 **Chúc mừng {student_name}! Bạn đã hoàn thành TOÀN BỘ lộ trình học tập!** Đây là một thành tích đáng tự hào. Hãy ôn lại kiến thức và chinh phục thử thách tiếp theo nhé!"
             return f"🏆 **Cột mốc {completed_count}/{total_count}!** Xuất sắc lắm {student_name}! Bạn đang tiến rất tốt trên lộ trình học tập. Hãy tiếp tục phát huy!"
 
-    async def generate_weekly_report(self, db: Session, student_id: int) -> str:
-        """Generate a weekly learning evaluation report."""
-        student = db.query(Student).filter(Student.id == student_id).first()
-        if not student:
-            return ""
-        student_name = student.name
 
-        from backend.database.models import ChatMessage
-        one_week_ago = datetime.now() - timedelta(days=7)
-        recent_messages = db.query(ChatMessage).filter(
-            ChatMessage.student_id == student_id,
-            ChatMessage.created_at >= one_week_ago
-        ).order_by(ChatMessage.created_at.asc()).all()
 
-        chat_summary = "\n".join([
-            f"{m.sender.upper()}: {m.message[:120]}" for m in recent_messages[-20:]
-        ]) or "Không có hoạt động nào trong tuần."
-
-        progress_records = db.query(Progress).filter(Progress.student_id == student_id).all()
-        progress_summary = "\n".join([
-            f"- {p.topic}: {p.status}" + (f", điểm={p.score}/10" if p.score is not None else "")
-            for p in progress_records
-        ]) or "Chưa có tiến độ nào được ghi nhận."
-
-        prompt = f"""Viết Báo Cáo Đánh Giá Học Tập Tuần cho học sinh {student_name}.
-
-Hoạt động tuần qua:
-{chat_summary}
-
-Tiến độ lộ trình:
-{progress_summary}
-
-Báo cáo cần bằng tiếng Việt, dùng markdown đẹp mắt, gồm 4 phần:
-1. **📊 Tóm tắt tuần**: Học sinh đã làm gì, hoàn thành bài tập nào
-2. **💪 Điểm mạnh**: Nội dung làm tốt, điểm cao
-3. **📈 Cần cải thiện**: Chủ đề còn yếu hoặc điểm chưa cao
-4. **🎯 Mục tiêu tuần tới**: 2-3 đề xuất cụ thể"""
-        try:
-            response = await self.llm_service.generate_response(
-                system_prompt="You are a personal AI Tutor writing a weekly learning evaluation report in Vietnamese.",
-                user_prompt=prompt
-            )
-            report = response.strip()
-            if report.startswith('{'):
-                try:
-                    data = json.loads(report)
-                    report = data.get("reply", report)
-                except:
-                    pass
-            return report
-        except Exception as e:
-            logger.error(f"Failed to generate weekly report: {e}")
-            return f"**📋 Báo Cáo Học Tập Tuần - {student_name}**\n\nBạn đã tích cực tham gia học tập trong tuần qua. Hãy tiếp tục duy trì nhịp độ này và chinh phục các mục tiêu tiếp theo!"
-
-    async def generate_daily_report(self, db: Session, student_id: int) -> str:
-        """Generate a daily learning evaluation report."""
+    async def generate_daily_report(self, db: Session, student_id: int, topic: str = "") -> str:
+        """Generate a daily learning evaluation report after task completion."""
         student = db.query(Student).filter(Student.id == student_id).first()
         if not student:
             return ""
@@ -567,7 +782,9 @@ Báo cáo cần bằng tiếng Việt, dùng markdown đẹp mắt, gồm 4 ph�
             for p in progress_records
         ]) or "Chưa có tiến độ nào được ghi nhận."
 
-        prompt = f"""Viết Báo Cáo Đánh Giá Học Tập Ngày cho học sinh {student_name}.
+        prompt = f"""Viết Báo Cáo Tóm Tắt Hằng Ngày cho học sinh {student_name}.
+
+Học sinh vừa hoàn thành xuất sắc bài học/kiểm tra: {topic}
 
 Hoạt động ngày qua:
 {chat_summary}
@@ -576,7 +793,7 @@ Tiến độ lộ trình:
 {progress_summary}
 
 Báo cáo cần bằng tiếng Việt, dùng markdown đẹp mắt, ngắn gọn gồm 3 phần:
-1. **📊 Tóm tắt ngày**: Hôm nay học sinh đã học gì
+1. **📊 Tóm tắt ngày**: Chúc mừng hoàn thành bài học {topic}
 2. **💪 Nhận xét**: Đánh giá kết quả nhanh
 3. **🎯 Nhắc nhở ngày mai**: Lời khuyên ngắn gọn"""
         try:

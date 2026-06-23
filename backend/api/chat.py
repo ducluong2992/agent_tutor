@@ -63,14 +63,57 @@ def get_chat_history(
 
 @router.delete("/history")
 def delete_chat_history(
+    request: Request,
     student_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     if not student_id:
         raise HTTPException(status_code=401, detail="Not logged in")
         
-    from backend.database.models import ChatMessage
-    db.query(ChatMessage).filter(ChatMessage.student_id == int(student_id)).delete()
+    from backend.database.models import ChatMessage, Roadmap, Progress, HomeworkSubmission, ScheduledJob, Document
+    import os
+    
+    sid = int(student_id)
+    
+    # Cancel all scheduled jobs in apscheduler before deleting from DB
+    scheduler_service = request.app.state.scheduler_service
+    if scheduler_service:
+        jobs = db.query(ScheduledJob).filter(ScheduledJob.student_id == sid).all()
+        for job in jobs:
+            if job.apscheduler_job_id:
+                try:
+                    scheduler_service.cancel_job(job.apscheduler_job_id)
+                except Exception:
+                    pass
+    
+    # Delete physical document files
+    docs = db.query(Document).filter(Document.student_id == sid).all()
+    for doc in docs:
+        try:
+            if doc.file_path and os.path.exists(doc.file_path):
+                os.remove(doc.file_path)
+        except Exception:
+            pass
+    
+    # Clear RAG vector store for this student
+    rag_service = request.app.state.rag_service
+    if rag_service:
+        try:
+            rag_service.clear_student_documents(sid)
+        except Exception:
+            pass
+    
+    db.query(ChatMessage).filter(ChatMessage.student_id == sid).delete()
+    db.query(Roadmap).filter(Roadmap.student_id == sid).delete()
+    db.query(Progress).filter(Progress.student_id == sid).delete()
+    db.query(HomeworkSubmission).filter(HomeworkSubmission.student_id == sid).delete()
+    db.query(ScheduledJob).filter(ScheduledJob.student_id == sid).delete()
+    db.query(Document).filter(Document.student_id == sid).delete()
+    
+    # Delete the user as well
+    from backend.database.models import Student
+    db.query(Student).filter(Student.id == sid).delete()
     db.commit()
     
-    return {"status": "success", "message": "Chat history cleared"}
+    return {"status": "success", "message": "All user data cleared"}
+

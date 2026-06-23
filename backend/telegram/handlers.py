@@ -71,7 +71,8 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 telegram_id=chat_id,
                 name=name,
                 linking_code=new_code,
-                learning_goals="Học tập tổng hợp",
+                learning_goals="Toán",
+                grade_level=1,
                 skill_level="Beginner"
             )
             db.add(student)

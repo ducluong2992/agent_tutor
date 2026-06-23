@@ -151,3 +151,20 @@ class RAGService:
             if i + chunk_size >= len(words):
                 break
         return chunks
+
+    def clear_student_documents(self, student_id: int):
+        """Remove all RAG data (ChromaDB collection + fallback) for a student."""
+        # Clear ChromaDB collection
+        if self.client:
+            collection_name = f"student_{student_id}_docs"
+            try:
+                self.client.delete_collection(collection_name)
+                logger.info(f"Deleted ChromaDB collection for student {student_id}.")
+            except Exception as e:
+                logger.warning(f"Could not delete ChromaDB collection for student {student_id}: {e}")
+        
+        # Clear in-memory fallback
+        if student_id in self.fallback_db:
+            del self.fallback_db[student_id]
+            logger.info(f"Cleared fallback RAG for student {student_id}.")
+
