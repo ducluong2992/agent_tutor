@@ -82,7 +82,7 @@ def delete_chat_history(
         for job in jobs:
             if job.apscheduler_job_id:
                 try:
-                    scheduler_service.cancel_job(job.apscheduler_job_id)
+                    scheduler_service.scheduler.remove_job(job.apscheduler_job_id)
                 except Exception:
                     pass
     

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Cookie, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date as date_type
 from backend.database.db import get_db
 from backend.database.models import ScheduledJob, Student, Progress, Roadmap, HomeworkSubmission
 import json
@@ -19,23 +19,41 @@ class ScheduleConfigRequest(BaseModel):
 
 @router.get("")
 def get_scheduled_jobs(
+    date: str = None,
     student_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     if not student_id:
         raise HTTPException(status_code=401, detail="Not logged in")
+    
+    query = db.query(ScheduledJob)\
+        .filter(ScheduledJob.student_id == int(student_id))
+    
+    # Optional date filtering: ?date=today or ?date=2026-06-25
+    if date:
+        if date == "today":
+            target_date = date_type.today()
+        else:
+            try:
+                target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD or 'today'.")
         
-    jobs = db.query(ScheduledJob)\
-        .filter(ScheduledJob.student_id == int(student_id))\
-        .order_by(ScheduledJob.scheduled_time.asc())\
-        .all()
+        from sqlalchemy import func
+        query = query.filter(
+            func.date(ScheduledJob.scheduled_time) == target_date
+        )
+    
+    jobs = query.order_by(ScheduledJob.scheduled_time.asc()).all()
         
     return [
         {
             "id": job.id,
             "topic": job.topic,
+            "job_type": job.job_type,
             "scheduled_time": job.scheduled_time.isoformat(),
             "status": job.status,
+            "is_auto": job.is_auto,
             "created_at": job.created_at.isoformat()
         }
         for job in jobs

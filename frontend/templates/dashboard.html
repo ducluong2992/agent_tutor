@@ -237,8 +237,11 @@
                         } else if (actionType === 'update_profile') {
                             refreshProfileData();
                             loadTodaySchedule(); // refresh schedule display
-                        } else if (actionType === 'grade_homework') {
+                            loadScheduledJobs(); // refresh scheduled jobs list
+                        } else if (actionType === 'grade_homework' || actionType === 'grade_exam') {
                             loadRoadmap(); // refresh score-weighted progress
+                            loadScheduledJobs(); // exam completion triggers next unit scheduling
+                            loadTodaySchedule();
                         }
                     }
                 } else {
@@ -639,36 +642,49 @@
 
         async function loadScheduledJobs() {
             try {
-                const response = await fetch('/api/schedule', { cache: 'no-store' });
+                // Only show today's tasks in the homework history widget
+                const response = await fetch('/api/schedule?date=today', { cache: 'no-store' });
                 if (response.ok) {
                     const jobs = await response.json();
                     const list = document.getElementById('scheduled-jobs-list');
                     list.innerHTML = '';
 
-                    if (jobs.length === 0) {
-                        list.innerHTML = '<li class="empty-placeholder text-center py-2">Chưa có bài tập nào được lên lịch.</li>';
+                    let activeJobs = jobs.filter(job => job.status !== 'cancelled');
+                    if (activeJobs.length === 0) {
+                        list.innerHTML = '<li class="empty-placeholder text-center py-2">Hôm nay không có bài tập nào được lên lịch.</li>';
                         return;
                     }
 
-                    jobs.forEach(job => {
+                    activeJobs.forEach(job => {
                         const li = document.createElement('li');
                         li.className = 'item-list-row flex justify-between items-center';
                         li.id = `job-row-${job.id}`;
 
-                        const dateFormatted = new Date(job.scheduled_time).toLocaleString('vi-VN');
+                        const d = new Date(job.scheduled_time);
+                        const timeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 
                         let badgeClass = 'badge-pending';
-                        if (job.status === 'sent') badgeClass = 'badge-success';
-                        if (job.status === 'cancelled') badgeClass = 'badge-cancelled';
+                        let statusLabel = 'Chờ';
+                        if (job.status === 'sent') { badgeClass = 'badge-success'; statusLabel = 'Đã gửi'; }
+                        if (job.status === 'cancelled') { badgeClass = 'badge-cancelled'; statusLabel = 'Đã hủy'; }
+
+                        // Clean topic name (remove " - Theory/Practice/Exam" suffix)
+                        const cleanTopic = job.topic.split(' - ')[0];
+                        let typeIcon = '📚';
+                        let typeLabel = '';
+                        if (job.job_type === 'theory') { typeIcon = '📚'; typeLabel = 'Lý thuyết'; }
+                        else if (job.job_type === 'practice') { typeIcon = '✏️'; typeLabel = 'Bài tập'; }
+                        else if (job.job_type === 'exam') { typeIcon = '📝'; typeLabel = 'Kiểm tra'; }
+                        else if (job.job_type === 'free_practice') { typeIcon = '🎮'; typeLabel = 'Tự do'; }
 
                         li.innerHTML = `
                             <div class="job-info">
-                                <p class="job-topic text-sm font-semibold">${job.topic}</p>
-                                <p class="job-time text-xs opacity-70"> ${dateFormatted}</p>
+                                <p class="job-topic text-sm font-semibold">${typeIcon} ${typeLabel}: ${cleanTopic}</p>
+                                <p class="job-time text-xs opacity-70">⏰ ${timeStr}</p>
                             </div>
                             <div class="job-action flex items-center gap-2">
-                                <span class="badge ${badgeClass}">${job.status}</span>
-                                ${job.status === 'pending' ? `<button onclick="cancelJob(${job.id})" class="btn-icon text-red-500" title="Hủy bỏ"></button>` : ''}
+                                <span class="badge ${badgeClass}">${statusLabel}</span>
+                                ${job.status === 'pending' ? `<button onclick="cancelJob(${job.id})" class="btn-icon text-red-500" title="Hủy bỏ">✕</button>` : ''}
                             </div>
                         `;
                         list.appendChild(li);
@@ -700,172 +716,91 @@
 
         async function loadTodaySchedule() {
             try {
-                const res = await fetch('/api/profile', { cache: 'no-store' });
+                // Use server-side date filter for efficiency
+                const res = await fetch('/api/schedule?date=today', { cache: 'no-store' });
                 if (!res.ok) return;
-                const student = await res.json();
-
+                const jobs = await res.json();
+                
                 const widget = document.getElementById('today-schedule-widget');
-
-                const roadmapRes = await fetch('/api/roadmap', { cache: 'no-store' });
-                let activeStepTitle = "Chưa rõ chủ đề (Chưa tạo lộ trình)";
-                let completedStepToday = false;
-
-                if (roadmapRes.ok) {
-                    const roadmapData = await roadmapRes.json();
-                    if (roadmapData.steps && roadmapData.steps.length > 0) {
-                        let prevCompleted = true;
-                        for (const step of roadmapData.steps) {
-                            if (step.status === 'completed' && step.updated_at) {
-                                const completedDate = new Date(step.updated_at);
-                                const today = new Date();
-                                if (completedDate.toDateString() === today.toDateString()) {
-                                    completedStepToday = true;
-                                }
-                            }
-                            if (step.status !== 'completed' && prevCompleted) {
-                                activeStepTitle = step.title;
-                                break;
-                            }
-                            prevCompleted = (step.status === 'completed');
-                        }
-                    }
+                
+                // Filter out cancelled jobs (already date-filtered by API)
+                const todayJobs = jobs.filter(job => job.status !== 'cancelled');
+                
+                if (todayJobs.length === 0) {
+                    widget.innerHTML = `
+                        <div style="text-align:center; padding:18px 12px; background:rgba(107,114,128,0.08); border:1px solid rgba(107,114,128,0.2); border-radius:12px;">
+                            <div style="font-size:1.8rem; margin-bottom:8px;">😴</div>
+                            <p style="font-weight:600; color:rgba(255,255,255,0.7);">Hôm nay bạn không có lịch học.</p>
+                            <p style="font-size:0.8rem; margin-top:4px; color:rgba(255,255,255,0.4);">Bạn có thể trò chuyện với AI để lập lịch học hoặc làm bài tự do nhé! 📖</p>
+                        </div>
+                    `;
+                    return;
                 }
-
-                const freqStr = (student.learning_frequency || "").toLowerCase();
-                let isLearningDay = false;
-
-                if (!freqStr) {
-                    isLearningDay = false;
-                } else if (freqStr.includes('hằng ngày') || freqStr.includes('hàng ngày') || freqStr.includes('mỗi ngày') || freqStr.includes('daily')) {
-                    isLearningDay = true;
-                } else {
-                    const today = new Date().getDay();
-                    const daysMap = {
-                        'thứ 2': 1, 'thứ hai': 1,
-                        'thứ 3': 2, 'thứ ba': 2,
-                        'thứ 4': 3, 'thứ tư': 3,
-                        'thứ 5': 4, 'thứ năm': 4,
-                        'thứ 6': 5, 'thứ sáu': 5,
-                        'thứ 7': 6, 'thứ bảy': 6,
-                        'chủ nhật': 0
-                    };
-                    let hasDaySpecific = false;
-                    for (const [dayStr, dayNum] of Object.entries(daysMap)) {
-                        if (freqStr.includes(dayStr)) {
-                            hasDaySpecific = true;
-                            if (today === dayNum) isLearningDay = true;
-                        }
-                    }
-                    if (!hasDaySpecific) isLearningDay = true;
-                }
-
-                if (completedStepToday) {
-                    isLearningDay = false;
-                }
-
-                // Determine current active slot (highlight if within 30 mins)
+                
                 const now = new Date();
                 const nowMins = now.getHours() * 60 + now.getMinutes();
 
                 function parseTimeMins(timeStr) {
-                    if (!timeStr) return -1;
                     const [h, m] = timeStr.split(':').map(Number);
                     return h * 60 + m;
                 }
+                
+                const itemsHtml = todayJobs.map(job => {
+                    const d = new Date(job.scheduled_time);
+                    const h = String(d.getHours()).padStart(2, '0');
+                    const m = String(d.getMinutes()).padStart(2, '0');
+                    const jobTimeStr = `${h}:${m}`;
+                    
+                    const t = parseTimeMins(jobTimeStr);
+                    const active = (nowMins >= t && nowMins < t + 60);
+                    const past = (nowMins > t + 60);
+                    const opacity = past ? '0.45' : '1';
+                    
+                    const dotStyle = active
+                        ? `background:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,0.3); animation:pulse-dot 1.5s infinite;`
+                        : past
+                            ? `background:#6b7280;`
+                            : `background:#22c55e;`;
 
-                function isActive(timeStr) {
-                    const t = parseTimeMins(timeStr);
-                    if (t < 0) return false;
-                    return nowMins >= t && nowMins < t + 60; // active within 1h window
-                }
+                    const rowBg = active
+                        ? `background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); border-radius: 10px;`
+                        : ``;
+                        
+                    let icon = '📚';
+                    let label = 'Bài học';
+                    if (job.job_type === 'theory') { icon = '📚'; label = 'Học lý thuyết'; }
+                    else if (job.job_type === 'practice') { icon = '✏️'; label = 'Bài tập vận dụng'; }
+                    else if (job.job_type === 'exam') { icon = '📝'; label = 'Bài kiểm tra'; }
+                    else if (job.job_type === 'free_practice') { icon = '🎮'; label = 'Bài tập tự do'; }
 
-                function isPast(timeStr) {
-                    const t = parseTimeMins(timeStr);
-                    if (t < 0) return false;
-                    return nowMins > t + 60;
-                }
-
-                const scheduleItems = [
-                    { time: student.theory_time || '19:00', label: 'Học lý thuyết', icon: '📚', color: '#10b981' },
-                    { time: student.practice_time || '19:30', label: 'Bài tập vận dụng', icon: '✏️', color: '#3b82f6' },
-                    { time: student.exam_time || '20:00', label: 'Bài kiểm tra', icon: '📝', color: '#f59e0b' },
-                ];
-
-                if (isLearningDay) {
-                    const itemsHtml = scheduleItems.map(item => {
-                        const active = isActive(item.time);
-                        const past = isPast(item.time);
-                        const opacity = past ? '0.45' : '1';
-
-                        // Green dot: pulse if active, solid if upcoming, dimmed if past
-                        const dotStyle = active
-                            ? `background:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,0.3); animation:pulse-dot 1.5s infinite;`
-                            : past
-                                ? `background:#6b7280;`
-                                : `background:#22c55e;`;
-
-                        const rowBg = active
-                            ? `background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); border-radius: 10px;`
-                            : ``;
-
-                        return `
-                        <div class="schedule-row" style="display:flex; align-items:center; gap:12px; padding:10px 8px; opacity:${opacity}; ${rowBg} transition: all 0.3s;">
-                            <!-- Green status dot -->
-                            <div style="flex-shrink:0; width:11px; height:11px; border-radius:50%; ${dotStyle}"></div>
-
-                            <!-- Time badge -->
-                            <div style="flex-shrink:0; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:4px 10px; min-width:54px; text-align:center;">
-                                <span style="font-size:0.82rem; font-weight:700; color:${active ? '#22c55e' : 'rgba(255,255,255,0.9)'}; letter-spacing:0.5px; font-variant-numeric:tabular-nums;">${item.time}</span>
-                            </div>
-
-                            <!-- Icon + label -->
-                            <div style="display:flex; align-items:center; gap:7px; flex:1;">
-                                <span style="font-size:1rem;">${item.icon}</span>
-                                <span style="font-size:0.88rem; font-weight:${active ? '700' : '500'}; color:${active ? '#fff' : 'rgba(255,255,255,0.75)'};">${item.label}</span>
-
-                            </div>
-                        </div>`;
-                    }).join('');
-
-                    widget.innerHTML = `
-                        <style>
-                            @keyframes pulse-dot {
-                                0%   { box-shadow: 0 0 0 0   rgba(34,197,94,0.5); }
-                                70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0);   }
-                                100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
-                            }
-                        </style>
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                            <span style="font-size:0.78rem; color:rgba(255,255,255,0.6);">Tần suất:</span>
-                            <span style="font-size:0.8rem; font-weight:600; color:#60a5fa;">${student.learning_frequency || 'Chưa thiết lập'}</span>
+                    return `
+                    <div class="schedule-row" style="display:flex; align-items:center; gap:12px; padding:10px 8px; opacity:${opacity}; ${rowBg} transition: all 0.3s;">
+                        <div style="flex-shrink:0; width:11px; height:11px; border-radius:50%; ${dotStyle}"></div>
+                        <div style="flex-shrink:0; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:4px 10px; min-width:54px; text-align:center;">
+                            <span style="font-size:0.82rem; font-weight:700; color:${active ? '#22c55e' : 'rgba(255,255,255,0.9)'}; letter-spacing:0.5px;">${jobTimeStr}</span>
                         </div>
-                        <div style="font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.5); margin-bottom:10px; padding: 5px 8px; background:rgba(255,255,255,0.04); border-radius:6px;">
-                            🎯 ${activeStepTitle}
+                        <div style="display:flex; align-items:center; gap:7px; flex:1;">
+                            <span style="font-size:1rem;">${icon}</span>
+                            <span style="font-size:0.88rem; font-weight:${active ? '700' : '500'}; color:${active ? '#fff' : 'rgba(255,255,255,0.75)'};">${label}</span>
                         </div>
-                        <div style="display:flex; flex-direction:column; gap:6px;">
-                            ${itemsHtml}
-                        </div>
-                    `;
-                } else {
-                    if (completedStepToday) {
-                        widget.innerHTML = `
-                            <div style="text-align:center; padding:18px 12px; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.2); border-radius:12px;">
-                                <div style="font-size:1.8rem; margin-bottom:8px;">🎉</div>
-                                <p style="font-weight:600; color:#22c55e;">Tuyệt vời! Bạn đã hoàn thành bài học hôm nay.</p>
-                                <p style="font-size:0.8rem; margin-top:4px; color:rgba(255,255,255,0.5);">Hãy nghỉ ngơi và chuẩn bị cho bài học tiếp theo nhé!</p>
-                            </div>
-                        `;
-                    } else {
-                        widget.innerHTML = `
-                            <div style="text-align:center; padding:18px 12px; background:rgba(107,114,128,0.08); border:1px solid rgba(107,114,128,0.2); border-radius:12px;">
-                                <div style="font-size:1.8rem; margin-bottom:8px;">😴</div>
-                                <p style="font-size:0.85rem; color:rgba(255,255,255,0.5); margin-bottom:4px;">Tần suất: <strong>${student.learning_frequency || "Chưa rõ"}</strong></p>
-                                <p style="font-weight:600; color:rgba(255,255,255,0.7);">Hôm nay bạn không có lịch học.</p>
-                                <p style="font-size:0.8rem; margin-top:4px; color:rgba(255,255,255,0.4);">Hãy nghỉ ngơi hoặc ôn lại bài cũ nhé! 📖</p>
-                            </div>
-                        `;
-                    }
-                }
+                    </div>`;
+                }).join('');
+                
+                widget.innerHTML = `
+                    <style>
+                        @keyframes pulse-dot {
+                            0%   { box-shadow: 0 0 0 0   rgba(34,197,94,0.5); }
+                            70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0);   }
+                            100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+                        }
+                    </style>
+                    <div style="font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.5); margin-bottom:10px; padding: 5px 8px; background:rgba(255,255,255,0.04); border-radius:6px;">
+                        🎯 Chủ đề: ${todayJobs[0].topic.split(' - ')[0]}
+                    </div>
+                    <div style="background:rgba(0,0,0,0.15); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px;">
+                        ${itemsHtml}
+                    </div>
+                `;
             } catch (e) {
                 console.error("Failed to load today schedule", e);
             }

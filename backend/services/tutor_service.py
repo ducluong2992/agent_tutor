@@ -55,6 +55,34 @@ class TutorService:
         # 4. Get chat history (last 10 messages)
         chat_history = self.memory_service.get_chat_history(db, student_id, limit=10)
 
+        # 4.5. Fetch current roadmap topics and progress for prompt injection
+        roadmap_topics_text = ""
+        current_unit_text = "Chưa có lộ trình"
+        roadmap_obj = db.query(Roadmap).filter(
+            Roadmap.student_id == student_id
+        ).order_by(Roadmap.created_at.desc()).first()
+        if roadmap_obj:
+            try:
+                roadmap_steps = json.loads(roadmap_obj.content)
+                all_progress = {p.topic: p for p in db.query(Progress).filter(
+                    Progress.student_id == student_id
+                ).all()}
+                topic_lines = []
+                current_topic = None
+                for step in roadmap_steps:
+                    title = step.get("title", "")
+                    p = all_progress.get(title)
+                    status = p.status if p else "not_started"
+                    score_str = f" (điểm: {p.score}/10)" if p and p.score is not None else ""
+                    topic_lines.append(f"  - {title} [{status}{score_str}]")
+                    if not current_topic and status != "completed":
+                        current_topic = title
+                roadmap_topics_text = "\n".join(topic_lines)
+                if current_topic:
+                    current_unit_text = current_topic
+            except Exception:
+                pass
+
         # 5. Build system prompt
         homework_schedule_text = "Chưa cài đặt lịch tự động"
         if student and (student.homework_frequency or 0) > 0:
@@ -70,6 +98,12 @@ You are an AI Math Tutor (Gia sư Toán học) for a student with the following 
 - Grade Level (Lớp): {grade_level}
 - Learning Goals: {learning_goals}
 - Auto Exam Schedule: {homework_schedule_text}
+- Current Unit (bài đang học): {current_unit_text}
+
+## ROADMAP TOPICS (danh sách bài học trong lộ trình — BẮT BUỘC dùng CHÍNH XÁC tên này):
+{roadmap_topics_text if roadmap_topics_text else '  Chưa có lộ trình.'}
+
+CRITICAL: When using actions (grade_exam, grade_homework, update_subtask, schedule_homework), the "topic" field MUST be the EXACT topic title from the roadmap list above. DO NOT invent or shorten topic names. Copy the exact string.
 
 ## Your Role
 You are a dedicated, personalized Math tutor. You:
@@ -324,6 +358,8 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                         )
                         db.add(progress)
                 db.commit()
+                if self.scheduler_service:
+                    await self.scheduler_service.update_schedule(student_id)
                 
                 executed_action_log = {"type": "generate_roadmap", "roadmap_id": roadmap.id, "subject": subject}
                 reply += f"\n\n🗺️ **Lộ trình học {subject} đã được tạo thành công!** Bạn có thể xem chi tiết trong phần Dashboard.\n\n👉 **Bây giờ, hãy cùng thiết lập lịch học cho bạn nhé!**\n- Bạn muốn học theo chu kỳ nào (Ví dụ: Hằng ngày, cách 1 ngày, Thứ 2-4-6)?\n- Khung giờ học cụ thể cho mỗi phần trong ngày:\n  + Mấy giờ học lý thuyết?\n  + Mấy giờ làm bài tập vận dụng?\n  + Mấy giờ làm bài kiểm tra?"
@@ -362,6 +398,8 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                         setattr(student, t_field, val)
                         updated_fields[t_field] = val
                 db.commit()
+                if self.scheduler_service:
+                    await self.scheduler_service.update_schedule(student_id)
                 executed_action_log = {"type": "update_profile", "updated": updated_fields}
                 schedule_msg = ""
                 if "learning_frequency" in updated_fields or "theory_time" in updated_fields:
@@ -375,11 +413,54 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                 score = float(params.get("score", 0.0))
                 feedback = params.get("feedback", "")
 
-
+                # Try exact match first, then ilike, then fuzzy fallback by "Bài X" prefix
                 progress_record = db.query(Progress).filter(
                     Progress.student_id == student_id,
-                    Progress.topic.ilike(f"%{topic}%")
+                    Progress.topic == topic
                 ).first()
+
+                if not progress_record:
+                    progress_record = db.query(Progress).filter(
+                        Progress.student_id == student_id,
+                        Progress.topic.ilike(f"%{topic}%")
+                    ).first()
+
+                if not progress_record:
+                    # Fuzzy fallback: extract "Bài X" or "Unit X" number and match
+                    unit_match = re.search(r'(?:Bài|Unit|Chương)\s*(\d+)', topic, re.IGNORECASE)
+                    if unit_match:
+                        unit_num = unit_match.group(1)
+                        all_progress = db.query(Progress).filter(
+                            Progress.student_id == student_id
+                        ).all()
+                        for p in all_progress:
+                            p_match = re.search(r'(?:Bài|Unit|Chương)\s*(\d+)', p.topic, re.IGNORECASE)
+                            if p_match and p_match.group(1) == unit_num:
+                                progress_record = p
+                                logger.info(f"Fuzzy matched topic '{topic}' -> '{p.topic}'")
+                                break
+
+                if not progress_record:
+                    # Last resort: match the first uncompleted topic in roadmap order
+                    _roadmap = db.query(Roadmap).filter(
+                        Roadmap.student_id == student_id
+                    ).order_by(Roadmap.created_at.desc()).first()
+                    if _roadmap:
+                        try:
+                            _steps = json.loads(_roadmap.content)
+                            for _step in _steps:
+                                _title = _step.get("title", "")
+                                _pr = db.query(Progress).filter(
+                                    Progress.student_id == student_id,
+                                    Progress.topic == _title,
+                                    Progress.status != "completed"
+                                ).first()
+                                if _pr:
+                                    progress_record = _pr
+                                    logger.info(f"Last-resort matched topic '{topic}' -> '{_pr.topic}'")
+                                    break
+                        except Exception:
+                            pass
 
                 if progress_record:
                     submission = HomeworkSubmission(
@@ -400,14 +481,12 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                     # Update status based on score
                     if score >= 5.0:
                         progress_record.status = "completed"
-                        if self.scheduler_service:
-                            await self.scheduler_service.schedule_post_task_report(
-                                student_id, progress_record.topic, datetime.now() + timedelta(minutes=2)
-                            )
                     else:
                         progress_record.status = "in_progress"
 
                     db.commit()
+                    if self.scheduler_service:
+                        await self.scheduler_service.update_schedule(student_id)
                     executed_action_log = {"type": "grade_exam", "topic": progress_record.topic, "score": score}
 
                     # Build score-weighted progress percentage
@@ -491,12 +570,26 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                 topic = params.get("topic")
                 task_type = params.get("task_type")
                 completed = params.get("completed", True)
-                
 
+                # Multi-level matching (same as grade_exam)
                 progress_record = db.query(Progress).filter(
                     Progress.student_id == student_id,
-                    Progress.topic.ilike(f"%{topic}%")
+                    Progress.topic == topic
                 ).first()
+                if not progress_record:
+                    progress_record = db.query(Progress).filter(
+                        Progress.student_id == student_id,
+                        Progress.topic.ilike(f"%{topic}%")
+                    ).first()
+                if not progress_record and topic:
+                    unit_match = re.search(r'(?:Bài|Unit|Chương)\s*(\d+)', topic, re.IGNORECASE)
+                    if unit_match:
+                        unit_num = unit_match.group(1)
+                        for p in db.query(Progress).filter(Progress.student_id == student_id).all():
+                            p_match = re.search(r'(?:Bài|Unit|Chương)\s*(\d+)', p.topic, re.IGNORECASE)
+                            if p_match and p_match.group(1) == unit_num:
+                                progress_record = p
+                                break
                 
                 if progress_record:
                     if task_type == 'theory':

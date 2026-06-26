@@ -173,14 +173,25 @@ class LLMService:
         if any(keyword in user_prompt_lower for keyword in ["schedule", "giao bài tập", "hẹn giờ", "bài tập", "homework"]):
             # Detect minutes/seconds or default
             delay = 60
+            # Default topic if we cannot extract a specific one
             topic = "Lập trình Python cơ bản"
+            # Try to extract a custom topic from the user prompt
+            import re
+            match = re.search(r"bài tập\s+([^,.!?\n]+)", user_prompt, re.IGNORECASE)
+            if match:
+                extracted = match.group(1).strip()
+                # Clean up trailing words like "sau" or "trong" if present
+                extracted = re.split(r"\s+(sau|trong)\s+", extracted)[0].strip()
+                if extracted:
+                    topic = extracted
+            # Adjust delay and possibly topic based on time keywords
             if "phút" in user_prompt_lower or "minute" in user_prompt_lower:
                 delay = 60
-                topic = "Vòng lặp trong Python"
+                # keep extracted topic if any, otherwise fallback
             elif "2 phút" in user_prompt_lower or "2 minutes" in user_prompt_lower:
                 delay = 120
-                topic = "Hàm trong Python"
-                
+                # keep extracted topic if any, otherwise fallback
+            
             from datetime import datetime, timedelta
             scheduled_time = (datetime.now() + timedelta(seconds=delay)).isoformat()
             
@@ -191,7 +202,7 @@ class LLMService:
                     "params": {
                         "topic": topic,
                         "scheduled_time": scheduled_time,
-                        "job_type": "free_practice"
+                        "job_type": "practice"
                     }
                 }
             }, ensure_ascii=False)
@@ -226,6 +237,20 @@ class LLMService:
                     "params": {
                         "learning_goals": new_goal,
                         "skill_level": new_level
+                    }
+                }
+            }, ensure_ascii=False)
+            
+        elif any(keyword in user_prompt_lower for keyword in ["đổi lịch", "lịch học", "hằng ngày", "mỗi ngày", "cập nhật lịch"]):
+            return json.dumps({
+                "reply": "Tôi đã cập nhật lịch học của bạn thành **Hàng ngày** với các khung giờ:\n- Lý thuyết: 19:00\n- Bài tập: 19:30\n- Kiểm tra: 20:00.\n\nLịch học hôm nay và danh sách bài tập đã được làm mới ở cột bên phải.",
+                "action": {
+                    "type": "update_profile",
+                    "params": {
+                        "learning_frequency": "Hàng ngày",
+                        "theory_time": "19:00",
+                        "practice_time": "19:30",
+                        "exam_time": "20:00"
                     }
                 }
             }, ensure_ascii=False)

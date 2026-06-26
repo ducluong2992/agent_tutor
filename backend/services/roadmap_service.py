@@ -50,22 +50,22 @@ Tài liệu tham khảo (hãy bám sát nội dung tài liệu này để tạo 
 {doc_context}
 
 Yêu cầu bắt buộc:
-1. Lộ trình bao gồm nhiều Task, trong đó mỗi Task tương ứng với 1 Unit (Bài học). Hãy tạo ra từ 5 đến 10 Unit chi tiết.
-2. Tiêu đề từng bài học (title) BẮT BUỘC phải theo định dạng "Unit 1: [Tiêu đề môn Toán]", "Unit 2: [Tiêu đề môn Toán]", v.v. (Ví dụ: "Unit 1: Phép cộng trừ", "Unit 2: Phân số").
-3. Nội dung mô tả (description) ở dưới BẮT BUỘC viết bằng Tiếng Việt. Bạn phải ghi rõ rằng mỗi Unit sẽ bao gồm 3 phần độc lập:
+1. Lộ trình bao gồm nhiều Task, trong đó mỗi Task tương ứng với 1 Bài (Bài học). Hãy tạo ra từ 8 đến 10 Bài học chi tiết(Bao gồm cả Đại số và Hình học)
+2. Tiêu đề từng bài học (title) BẮT BUỘC phải theo định dạng "Bài 1: [Tiêu đề môn Toán]", "Bài 2: [Tiêu đề môn Toán]", v.v. (Ví dụ: "Bài 1: Phép cộng trừ", "Bài 2: Phân số").
+3. Nội dung mô tả (description) ở dưới BẮT BUỘC viết bằng Tiếng Việt. Bạn phải ghi rõ rằng mỗi Bài học sẽ bao gồm 3 phần độc lập:
    - Học lý thuyết
    - Bài tập vận dụng (5 câu): Trắc nghiệm, Tự luận giải toán
    - Kiểm tra (8 câu): Trắc nghiệm, Tự luận giải toán
 4. Output MUST BE ONLY a raw JSON list of objects.
-
+5. Task cuối mặc định sẽ là "Ôn tập cuối chương" để tổng kết tất cả kiến thức các chương đã học.
 Mỗi step trong JSON list phải chứa các key sau:
-1. "title": Tiêu đề bài học theo định dạng Unit X.
+1. "title": Tiêu đề bài học theo định dạng Bài X.
 2. "description": Mô tả chi tiết nội dung (Tiếng Việt) và nhắc lại cấu trúc 3 phần.
 3. "estimated_hours": Thời gian ước tính để hoàn thành (số nguyên, ví dụ: 2, 4).
 
 Ví dụ định dạng đúng:
 [
-    {{"title": "Unit 1: Phép tính cơ bản", "description": "Học về các phép cộng trừ cơ bản.", "estimated_hours": 2}}
+    {{"title": "Bài 1: Phép tính cơ bản", "description": "Học về các phép cộng trừ cơ bản.", "estimated_hours": 2}}
 ]
 
 Do not include any formatting, markdown wrappers (like ```json ... ```), or text other than the raw JSON list of objects.

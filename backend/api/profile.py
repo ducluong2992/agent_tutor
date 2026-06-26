@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Cookie
+from fastapi import APIRouter, Depends, HTTPException, Cookie, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -15,6 +15,10 @@ class ProfileUpdate(BaseModel):
     grade_level: Optional[int] = None
     homework_time: Optional[str] = None
     homework_frequency: Optional[int] = None
+    theory_time: Optional[str] = None
+    practice_time: Optional[str] = None
+    exam_time: Optional[str] = None
+    learning_frequency: Optional[str] = None
 
 @router.get("")
 def get_profile(student_id: Optional[str] = Cookie(None), db: Session = Depends(get_db)):
@@ -43,6 +47,7 @@ def get_profile(student_id: Optional[str] = Cookie(None), db: Session = Depends(
 @router.post("")
 def update_profile(
     profile_data: ProfileUpdate,
+    background_tasks: BackgroundTasks,
     student_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
@@ -66,6 +71,20 @@ def update_profile(
         student.homework_time = profile_data.homework_time
     if profile_data.homework_frequency is not None:
         student.homework_frequency = profile_data.homework_frequency
+    if getattr(profile_data, "theory_time", None) is not None:
+        student.theory_time = profile_data.theory_time
+    if getattr(profile_data, "practice_time", None) is not None:
+        student.practice_time = profile_data.practice_time
+    if getattr(profile_data, "exam_time", None) is not None:
+        student.exam_time = profile_data.exam_time
+    if getattr(profile_data, "learning_frequency", None) is not None:
+        student.learning_frequency = profile_data.learning_frequency
         
     db.commit()
+    
+    # Trigger scheduler update in the background
+    import backend.services.global_services as global_services
+    if global_services.scheduler_service:
+        background_tasks.add_task(global_services.scheduler_service.update_schedule, student.id)
+
     return {"status": "success", "message": "Profile updated successfully"}

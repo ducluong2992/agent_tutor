@@ -1,120 +1,225 @@
-# AI Tutor Platform MVP
+# AI Tutor Platform
 
-Một phiên bản Gia sư Trí tuệ nhân tạo (AI Tutor) tinh gọn, chạy đa kênh (Web App & Telegram Bot), tích hợp công nghệ RAG để hỗ trợ học sinh học tập cá nhân hóa.
+Nền tảng Gia sư Trí tuệ nhân tạo (AI Tutor) chạy đa kênh (Web App & Telegram Bot), tích hợp RAG, lộ trình học tập cá nhân hóa và lịch học tự động theo thời gian thực.
 
 ## 🎯 Mục tiêu dự án
-* **Đơn giản & Tinh gọn:** Không lạm dụng multi-agent phức tạp; sử dụng kiến trúc Hướng dịch vụ (Service-based Architecture) rõ ràng.
-* **Đa kênh đồng bộ:** Học sinh có thể chat trực tiếp trên giao diện Web hoặc ứng dụng Telegram. Lịch bài tập và tiến độ đồng bộ 100% qua cơ sở dữ liệu SQLite chung.
-* **RAG (Retrieval-Augmented Generation):** Tải lên tài liệu (.pdf, .docx, .txt) để AI gia sư trả lời câu hỏi trực tiếp dựa trên nội dung tài liệu đó.
-* **Giao bài tập động (Dynamic Scheduling):** Lên lịch bài tập linh hoạt dựa trên yêu cầu chat của người dùng (ví dụ: "giao bài tập Python sau 1 phút") bằng APScheduler, không cấu hình cứng nhắc giờ cố định.
+
+* **Kiến trúc hướng dịch vụ (Service-based):** Rõ ràng, dễ mở rộng, tránh circular imports qua `global_services`.
+* **Đa kênh đồng bộ:** Học sinh chat trực tiếp trên Web hoặc Telegram. Toàn bộ lịch sử hội thoại, tiến độ và lịch học đồng bộ qua cơ sở dữ liệu SQLite chung.
+* **RAG (Retrieval-Augmented Generation):** Tải tài liệu (.pdf, .docx, .txt) để AI trả lời câu hỏi dựa trực tiếp trên nội dung tài liệu đó (ChromaDB).
+* **Lộ trình học tập có cấu trúc:** AI sinh lộ trình gồm các Unit, mỗi Unit gồm 3 phần bắt buộc: **Lý thuyết → Bài tập vận dụng (5 câu) → Kiểm tra (8 câu)**. Chỉ khi điểm kiểm tra ≥ 5/10 mới mở khóa Unit tiếp theo.
+* **Lịch học tự động (Scheduler):** APScheduler tự động giao bài Lý thuyết / Bài tập / Kiểm tra đúng giờ cài đặt mỗi ngày; hỗ trợ học theo ngày cụ thể trong tuần hoặc học hằng ngày.
+* **Cấu hình AI linh hoạt:** Chọn AI provider (Gemini / OpenAI / OpenRouter) và nhập API Key trực tiếp trên giao diện Settings, không cần chỉnh sửa file `.env`.
 
 ---
 
 ## 📂 Cấu trúc thư mục
+
 ```text
-ai_tutor/
+AI_TUTOR/
 ├── backend/
-│   ├── main.py                  # Điểm khởi chạy FastAPI & Telegram Bot
-│   ├── api/                     # Các routers endpoint API
-│   │   ├── chat.py              # Xử lý hội thoại của học sinh
-│   │   ├── upload.py            # Tải lên và trích xuất tài liệu
-│   │   ├── roadmap.py           # Tạo lộ trình học tập và đánh giá tiến độ
-│   │   ├── profile.py           # Quản lý hồ sơ học sinh
-│   │   └── scheduler.py         # Lên lịch giao bài tập về nhà
-│   ├── services/                # Tầng nghiệp vụ xử lý
-│   │   ├── global_services.py   # Registry chia sẻ singleton tránh circular imports
-│   │   ├── tutor_service.py     # Điều phối hội thoại, phân tích action của AI
-│   │   ├── llm_service.py       # Wrapper gọi Gemini API / OpenAI API / Mock offline
-│   │   ├── rag_service.py       # Phân đoạn văn bản và lưu trữ vector vào ChromaDB
-│   │   ├── memory_service.py    # Quản lý lịch sử chat
-│   │   ├── roadmap_service.py   # Thiết kế chương trình học dựa trên AI
-│   │   └── scheduler_service.py # Lên lịch APScheduler & Gửi tin nhắn tự động
-│   ├── database/                # Quản lý cơ sở dữ liệu
-│   │   ├── db.py                # Cấu hình SQLAlchemy & SQLite engine
-│   │   └── models.py            # Định nghĩa các bảng (Student, Messages, Docs, v.v.)
-│   ├── telegram/                # Tích hợp Telegram Bot
-│   │   ├── bot.py               # Khởi tạo và thiết lập polling Bot
-│   │   └── handlers.py          # Lắng nghe text, tài liệu, lệnh /start, /link
-│   ├── storage/                 # Lưu trữ SQLite db và file upload
-│   └── tests/                   # Kịch bản kiểm thử tự động
+│   ├── main.py                    # Điểm khởi chạy FastAPI, khởi tạo service, router, lifespan
+│   ├── api/                       # Các routers endpoint API
+│   │   ├── chat.py                # Xử lý hội thoại của học sinh
+│   │   ├── upload.py              # Tải lên và trích xuất tài liệu vào ChromaDB
+│   │   ├── roadmap.py             # Tạo lộ trình, cập nhật tiến độ từng chủ đề
+│   │   ├── profile.py             # Đọc / cập nhật hồ sơ học sinh (tên, lịch học, v.v.)
+│   │   ├── scheduler.py           # Xem danh sách, hủy lịch học đã đặt
+│   │   └── settings.py            # Cấu hình AI provider, API key, kiểm tra kết nối
+│   ├── services/                  # Tầng nghiệp vụ xử lý
+│   │   ├── global_services.py     # Registry singleton tránh circular imports
+│   │   ├── config_service.py      # Đọc / ghi cấu hình AI (data/llm_config.json)
+│   │   ├── tutor_service.py       # Điều phối hội thoại, phân tích action JSON của AI
+│   │   ├── llm_service.py         # Wrapper gọi Gemini / OpenAI / OpenRouter / Mock
+│   │   ├── rag_service.py         # Phân đoạn văn bản, lưu vector vào ChromaDB
+│   │   ├── memory_service.py      # Quản lý lịch sử chat theo phiên học
+│   │   ├── roadmap_service.py     # Sinh lộ trình học tập dựa trên AI
+│   │   └── scheduler_service.py   # APScheduler: lên lịch & gửi bài tự động mỗi phút
+│   ├── database/                  # Quản lý cơ sở dữ liệu
+│   │   ├── db.py                  # Cấu hình SQLAlchemy & SQLite engine
+│   │   └── models.py              # Định nghĩa các bảng dữ liệu (xem chi tiết bên dưới)
+│   ├── telegram/                  # Tích hợp Telegram Bot
+│   │   ├── bot.py                 # Khởi tạo, polling và gửi tin nhắn Telegram
+│   │   └── handlers.py            # Xử lý lệnh /start, /link, text và file từ Telegram
+│   ├── storage/                   # Lưu trữ file SQLite database và tài liệu tải lên
+│   └── tests/                     # Kịch bản kiểm thử
 │       └── test_app.py
-├── frontend/                    # Giao diện Jinja2 Templates & Static
+├── frontend/                      # Giao diện Jinja2 Templates & Static
 │   ├── templates/
-│   │   ├── onboarding.html      # Trang đăng ký / Đăng nhập
-│   │   └── dashboard.html       # Bảng điều khiển học tập đa năng
+│   │   ├── onboarding.html        # Trang đăng ký / Đăng nhập
+│   │   ├── dashboard.html         # Bảng điều khiển học tập chính
+│   │   └── settings.html          # Trang cấu hình AI provider & API key
 │   └── static/
-│       └── css/
-│           └── style.css        # Hệ thống thiết kế UI Glassmorphism cao cấp
-├── Dockerfile                   # Docker build
-├── docker-compose.yml           # Triển khai container hóa
-├── .env                         # Tệp cấu hình môi trường hoạt động
-├── .env.example                 # Tệp mẫu hướng dẫn cấu hình
-└── requirements.txt             # Danh sách thư viện Python
+│       ├── css/
+│       │   └── style.css          # Hệ thống thiết kế UI (Glassmorphism)
+│       └── images/                # Tài nguyên hình ảnh tĩnh
+├── data/                          # Dữ liệu runtime (tự tạo khi chạy)
+│   └── llm_config.json            # Cấu hình AI provider lưu từ giao diện Settings
+├── main.py                        # Entry point thay thế (gọi uvicorn từ thư mục gốc)
+├── migrate.py                     # Script tạo/cập nhật schema CSDL
+├── Dockerfile                     # Docker build image
+├── docker-compose.yml             # Triển khai container hóa
+├── .env                           # Biến môi trường (chỉ cần TELEGRAM_BOT_TOKEN)
+├── .env.example                   # File mẫu hướng dẫn cấu hình
+└── requirements.txt               # Danh sách thư viện Python
 ```
+
+---
+
+## 🗄️ Mô hình dữ liệu
+
+| Bảng | Mô tả |
+|---|---|
+| `students` | Thông tin học sinh: tên, email, lớp, mục tiêu, mã Telegram, lịch học (`theory_time`, `practice_time`, `exam_time`, `learning_frequency`) |
+| `chat_messages` | Lịch sử hội thoại (user / ai), liên kết với `students` |
+| `documents` | Tài liệu đã tải lên (.pdf, .docx, .txt), dùng cho RAG |
+| `roadmaps` | Lộ trình học tập (JSON), mỗi học sinh có thể có nhiều lộ trình |
+| `progress` | Tiến độ từng chủ đề: `not_started`, `in_progress`, `completed`; lưu điểm tốt nhất, số lần làm bài |
+| `homework_submissions` | Từng lần nộp bài kiểm tra: điểm, phản hồi AI |
+| `scheduled_jobs` | Lịch bài tập đã đặt: loại (`theory`, `practice`, `exam`, `free_practice`), giờ chạy, trạng thái |
 
 ---
 
 ## 🛠️ Hướng dẫn cài đặt & Chạy ứng dụng
 
-### 1. Cài đặt môi trường Python cục bộ
-Yêu cầu Python từ phiên bản **3.10 trở lên**.
+### 1. Yêu cầu hệ thống
+* Python **3.10** trở lên
+
+### 2. Cài đặt môi trường
 
 ```bash
 # Tạo môi trường ảo
 python -m venv venv
+
+# Kích hoạt (Windows)
 venv\Scripts\activate
 
-# Cài đặt các thư viện cần thiết
+# Kích hoạt (Linux/macOS)
+source venv/bin/activate
+
+# Cài đặt thư viện
 pip install -r requirements.txt
 ```
 
-### 2. Thiết lập cấu hình `.env`
-Sao chép `.env.example` thành `.env` và tùy chỉnh:
-* Để chạy offline giả lập không cần API key, giữ nguyên `LLM_PROVIDER=mock`.
-* Để sử dụng AI thực tế, đổi `LLM_PROVIDER=gemini` và điền `GEMINI_API_KEY`, hoặc sử dụng `openai` tương ứng.
-* Điền `TELEGRAM_BOT_TOKEN` từ @BotFather nếu muốn tích hợp Telegram.
+### 3. Thiết lập cấu hình `.env`
 
-### 3. Chạy kiểm thử tự động
-Chạy pytest để đảm bảo toàn bộ hệ thống hoạt động ổn định:
+Sao chép `.env.example` thành `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Nội dung `.env` chỉ cần một biến duy nhất:
+
+```env
+# Để trống nếu không dùng Telegram Bot
+TELEGRAM_BOT_TOKEN=
+```
+
+> **Lưu ý:** Cấu hình AI provider (Gemini / OpenAI / OpenRouter) và API Key được quản lý **hoàn toàn qua giao diện** tại `/settings`. Không cần chỉnh sửa `.env` cho phần này.
+
+### 4. Cấu hình AI (qua giao diện)
+
+1. Khởi chạy ứng dụng (bước 5 bên dưới).
+2. Truy cập **Dashboard → biểu tượng ⚙️ Settings** hoặc truy cập trực tiếp `/settings`.
+3. Chọn **AI Provider** (Gemini / OpenAI / OpenRouter / Mock) và nhập **API Key**.
+4. Nhấn **Lưu & Kiểm tra kết nối** để áp dụng ngay lập tức (không cần khởi động lại server).
+
+> **Chế độ Mock:** Nếu không có API Key, hệ thống tự động chạy ở chế độ Mock — phù hợp để thử nghiệm giao diện.
+
+### 5. Khởi chạy ứng dụng
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+Truy cập Dashboard tại: [http://localhost:8000/](http://localhost:8000/)
+
+### 6. Chạy kiểm thử
+
 ```bash
 pytest backend/tests/
 ```
 
-### 4. Khởi chạy dự án
-```bash
-uvicorn backend.main:app --reload
-```
-Truy cập trang Web Dashboard tại địa chỉ: [http://localhost:8000/](http://localhost:8000/)
-
 ---
 
 ## 🐳 Triển khai với Docker Compose
-Đảm bảo bạn đã cài đặt Docker và Docker Compose.
 
 ```bash
 # Xây dựng và khởi chạy container
 docker-compose up --build -d
 
-# Theo dõi logs hoạt động
+# Theo dõi logs
 docker logs -f ai_tutor_app
 ```
 
 ---
 
-## 🚀 Các tính năng chính và cách trải nghiệm
-1. **Đăng ký / Onboarding:** Truy cập giao diện web, chọn **Đăng ký** để khởi tạo học sinh mới. Hệ thống sinh ngẫu nhiên một mã liên kết Telegram (vd: `TUTOR-ABC123`).
-2. **Liên kết Telegram Bot:** 
-   * Tìm Telegram bot của bạn, gõ lệnh `/start TUTOR-ABC123` để liên kết.
-   * Sau khi liên kết thành công, mọi đoạn chat trên Telegram hoặc Web đều sẽ lưu chung lịch sử.
-3. **Chat và học cùng AI:** Hỏi các câu hỏi lý thuyết. Hệ thống sử dụng prompt hướng cấu trúc JSON để phát hiện ý định người dùng.
-4. **Hỏi đáp tài liệu (RAG):**
-   * Trên Web: Chọn tải tài liệu (.pdf, .docx, .txt) ở cột trái.
-   * Trên Telegram: Gửi trực tiếp file tài liệu vào khung chat bot.
-   * AI sẽ tự học tài liệu này và dùng nó làm ngữ cảnh trả lời khi bạn hỏi.
-5. **Giao bài tập động (APScheduler):**
-   * Thử nhắn: `"Giao bài tập về Python sau 1 phút"` vào chat.
-   * AI sẽ phản hồi xác nhận và một lịch trình mới xuất hiện ở danh sách lịch bài tập.
-   * Đúng 1 phút sau, hệ thống sẽ tự sinh bài tập thông qua AI và gửi tin nhắn (hoặc tin Telegram) trực tiếp cho bạn!
-6. **Lộ trình học (Roadmap):**
-   * Nhập tên môn học (ví dụ: `Data Science`) ở cột phải rồi nhấn **Tạo**, AI thiết lập lộ trình các bước chi tiết.
-   * Tích chọn hoàn thành để tăng phần trăm hiển thị trên thanh tiến độ.
+## 🚀 Hướng dẫn trải nghiệm
+
+### Bước 1 — Đăng ký / Đăng nhập
+Truy cập `/onboarding`, nhập email để tạo tài khoản. Hệ thống tự sinh mã liên kết Telegram (ví dụ: `TUTOR-AB12CD`).
+
+### Bước 2 — Liên kết Telegram Bot (tùy chọn)
+Tìm bot Telegram của bạn, gõ: `/start TUTOR-AB12CD`
+Sau khi liên kết, toàn bộ lịch sử chat và bài tập được đồng bộ giữa Web và Telegram.
+
+### Bước 3 — Tạo lộ trình học tập
+Trên Dashboard, nhập môn học (ví dụ: `Toán lớp 10`) và nhấn **Tạo lộ trình**. AI sẽ sinh danh sách Unit có cấu trúc:
+- 📚 **Lý thuyết** — AI giảng bài
+- ✏️ **Bài tập vận dụng** — 5 câu luyện tập (không tính điểm tiến trình)
+- 📝 **Kiểm tra** — 8 câu, điểm ≥ 5/10 mới mở khóa Unit tiếp theo
+
+### Bước 4 — Cài đặt lịch học tự động
+Nhắn với AI: `"Tôi muốn học hằng ngày, lý thuyết lúc 7:00, bài tập lúc 14:00, kiểm tra lúc 19:00"`
+AI sẽ lưu lịch và widget **Lịch học hôm nay** trên Dashboard sẽ cập nhật ngay.
+
+APScheduler kiểm tra mỗi phút và tự động gửi đúng loại bài (lý thuyết / bài tập / kiểm tra) vào đúng giờ.
+
+### Bước 5 — Hỏi đáp tài liệu (RAG)
+- **Trên Web:** Tải file tài liệu (.pdf, .docx, .txt) qua nút Upload.
+- **Trên Telegram:** Gửi trực tiếp file vào chat bot.
+
+AI sẽ phân đoạn, lưu vector vào ChromaDB và dùng tài liệu đó làm ngữ cảnh khi bạn đặt câu hỏi.
+
+### Bước 6 — Đặt bài tập tự do
+Nhắn: `"Giao cho tôi 5 bài tập về phương trình bậc 2 ngay bây giờ"`
+AI xác nhận và scheduler sẽ gửi bài trong vài giây.
+
+---
+
+## ⚙️ Các API Endpoint chính
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET/POST` | `/onboarding` | Đăng ký / Đăng nhập |
+| `GET` | `/` | Dashboard chính |
+| `GET` | `/settings` | Trang cài đặt AI |
+| `GET` | `/logout` | Đăng xuất |
+| `POST` | `/api/chat` | Gửi tin nhắn đến AI Tutor |
+| `POST` | `/api/upload` | Tải tài liệu lên ChromaDB |
+| `GET/POST` | `/api/roadmap` | Lấy / Tạo lộ trình học tập |
+| `PATCH` | `/api/roadmap/progress` | Cập nhật tiến độ chủ đề |
+| `GET/POST` | `/api/profile` | Xem / Cập nhật hồ sơ học sinh |
+| `GET` | `/api/scheduler/jobs` | Xem danh sách lịch đã đặt |
+| `DELETE` | `/api/scheduler/jobs/{id}` | Hủy lịch học |
+| `GET/POST` | `/api/settings` | Xem / Lưu cấu hình AI provider |
+| `GET` | `/api/settings/test` | Kiểm tra kết nối AI provider |
+
+---
+
+## 📦 Thư viện chính
+
+| Thư viện | Mục đích |
+|---|---|
+| `fastapi` | Web framework API |
+| `uvicorn` | ASGI server |
+| `sqlalchemy` | ORM & SQLite |
+| `apscheduler` | Lên lịch giao bài tự động |
+| `chromadb` | Vector store cho RAG |
+| `python-telegram-bot` | Tích hợp Telegram Bot |
+| `google-generativeai` | Gọi Gemini API |
+| `openai` | Gọi OpenAI / OpenRouter API |
+| `pypdf` + `python-docx` | Trích xuất nội dung tài liệu |
+| `jinja2` | Template HTML |
+| `httpx` | HTTP client async |

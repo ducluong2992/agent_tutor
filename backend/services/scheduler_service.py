@@ -11,21 +11,14 @@ logger = logging.getLogger(__name__)
 class SchedulerService:
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
-        self.tutor_service = None  # Set after initialization to avoid circular imports
+        self.tutor_service = None
 
     def start(self):
         if not self.scheduler.running:
             try:
                 self.scheduler.start()
-                # Check auto-homework every minute
-                self.scheduler.add_job(
-                    self._check_auto_homework,
-                    'interval',
-                    minutes=1,
-                    id='auto_homework_check',
-                    replace_existing=True
-                )
-                logger.info("APScheduler started successfully with auto-homework jobs.")
+                self._reload_pending_jobs()
+                logger.info("APScheduler started successfully and reloaded jobs.")
             except Exception as e:
                 logger.error(f"Failed to start APScheduler: {e}")
 
@@ -36,6 +29,31 @@ class SchedulerService:
 
     def set_tutor_service(self, tutor_service):
         self.tutor_service = tutor_service
+
+    def _reload_pending_jobs(self):
+        db = SessionLocal()
+        try:
+            now = datetime.now()
+            jobs = db.query(ScheduledJob).filter(ScheduledJob.status == "pending").all()
+            for job in jobs:
+                run_time = job.scheduled_time
+                if run_time < now:
+                    run_time = now + timedelta(seconds=10) # run shortly if missed
+                try:
+                    new_job = self.scheduler.add_job(
+                        self._trigger_homework_job,
+                        'date',
+                        run_date=run_time,
+                        args=[job.student_id, job.id, job.topic],
+                        id=f"homework_{job.id}",
+                        replace_existing=True
+                    )
+                    job.apscheduler_job_id = new_job.id
+                except Exception as e:
+                    logger.error(f"Failed to reload job {job.id}: {e}")
+            db.commit()
+        finally:
+            db.close()
 
     async def schedule_homework(self, student_id: int, topic: str, run_time: datetime, is_auto: bool = False, job_type: str = "practice") -> int:
         db = SessionLocal()
@@ -71,43 +89,182 @@ class SchedulerService:
         finally:
             db.close()
 
+    async def update_schedule(self, student_id: int):
+        """Called when schedule is updated, or roadmap is created, or a unit is completed."""
+        db = SessionLocal()
+        try:
+            # 1. Cancel all pending auto jobs
+            jobs = db.query(ScheduledJob).filter(
+                ScheduledJob.student_id == student_id,
+                ScheduledJob.status == "pending",
+                ScheduledJob.is_auto == True
+            ).all()
+            for job in jobs:
+                job.status = "cancelled"
+                if job.apscheduler_job_id:
+                    try:
+                        self.scheduler.remove_job(job.apscheduler_job_id)
+                    except Exception:
+                        pass
+            db.commit()
+            
+            # 2. Get active roadmap and uncompleted topics
+            student = db.query(Student).filter(Student.id == student_id).first()
+            if not student: return
+            
+            roadmap = db.query(Roadmap).filter(Roadmap.student_id == student_id).order_by(Roadmap.created_at.desc()).first()
+            if not roadmap: return
+            
+            # Require student to explicitly chat to set learning_frequency first!
+            if not student.learning_frequency: return
+            
+            try: steps = json.loads(roadmap.content)
+            except: return
+            
+            uncompleted_topics = []
+            for step in steps:
+                title = step.get("title")
+                if not title: continue
+                progress = db.query(Progress).filter(
+                    Progress.student_id == student_id,
+                    Progress.topic == title
+                ).first()
+                if not progress or progress.status != "completed":
+                    uncompleted_topics.append(title)
+                    # No break — collect ALL uncompleted topics to schedule across future dates
+                    
+            if not uncompleted_topics: return
+            
+            logger.info(f"Scheduling {len(uncompleted_topics)} uncompleted topics for student {student_id}")
+            
+            # 3. Generate future dates (1 date per uncompleted topic)
+            now = datetime.now()
+            theory_time = self._parse_time(student.theory_time, "19:00")
+            practice_time = self._parse_time(student.practice_time, "19:30")
+            exam_time = self._parse_time(student.exam_time, "20:00")
+            
+            dates = self._get_learning_dates(student, now, len(uncompleted_topics), exam_time)
+            
+            # 4. Schedule Theory, Practice, Exam for each topic on its corresponding date
+            for i, topic in enumerate(uncompleted_topics):
+                if i >= len(dates): break
+                day = dates[i]
+                
+                for j_type, t_str in [("theory", theory_time), ("practice", practice_time), ("exam", exam_time)]:
+                    h, m = map(int, t_str.split(':'))
+                    run_time = datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+                    
+                    full_topic = f"{topic} - {j_type.capitalize()}"
+                    
+                    if run_time < now:
+                        # Stagger past jobs by a few seconds so they execute in order and don't hit LLM rate limits
+                        offset = {"theory": 5, "practice": 15, "exam": 25}
+                        run_time = now + timedelta(seconds=offset.get(j_type, 10))
+                        
+                    await self.schedule_homework(student_id, full_topic, run_time, is_auto=True, job_type=j_type)
+                
+                logger.info(f"  Scheduled '{topic}' on {day} (theory={theory_time}, practice={practice_time}, exam={exam_time})")
+                    
+        except Exception as e:
+            logger.error(f"Error in update_schedule: {e}")
+        finally:
+            db.close()
+
+    def _parse_time(self, time_str, default):
+        try:
+            if not time_str: return default
+            h, m = map(int, time_str.split(':'))
+            return f"{h:02d}:{m:02d}"
+        except:
+            return default
+
+    def _get_learning_dates(self, student, start_date: datetime, count: int, exam_time_str: str):
+        days = []
+        current_date = start_date.date()
+        freq_str = (student.learning_frequency or "").lower()
+        
+        days_map = {
+            'thứ 2': 0, 'thứ hai': 0, 'monday': 0,
+            'thứ 3': 1, 'thứ ba': 1, 'tuesday': 1,
+            'thứ 4': 2, 'thứ tư': 2, 'wednesday': 2,
+            'thứ 5': 3, 'thứ năm': 3, 'thursday': 3,
+            'thứ 6': 4, 'thứ sáu': 4, 'friday': 4,
+            'thứ 7': 5, 'thứ bảy': 5, 'saturday': 5,
+            'chủ nhật': 6, 'sunday': 6, 'cn': 6
+        }
+        selected_weekdays = set()
+        
+        # 1. First pass: Check for full words
+        for d_str, d_num in days_map.items():
+            if d_str in freq_str:
+                selected_weekdays.add(d_num)
+                
+        # 2. Second pass: If it's a short format like "3-5-7" or "2,4,6", extract digits
+        import re
+        digits = re.findall(r'\b[2-7]\b', freq_str.replace('-', ' ').replace(',', ' '))
+        for d in digits:
+            selected_weekdays.add(int(d) - 2) # e.g. '2' -> 0 (Monday)
+            
+        interval = 1
+        if "cách 1 ngày" in freq_str or "2 ngày 1 lần" in freq_str:
+            interval = 2
+        elif "cách 2 ngày" in freq_str or "3 ngày 1 lần" in freq_str:
+            interval = 3
+        elif not selected_weekdays:
+            interval = 1
+            
+        h, m = map(int, exam_time_str.split(':'))
+        start_datetime_exam = datetime.combine(current_date, datetime.min.time()).replace(hour=h, minute=m)
+        if start_datetime_exam < start_date:
+            current_date += timedelta(days=1)
+            
+        days_found = 0
+        while days_found < count:
+            if selected_weekdays:
+                if current_date.weekday() in selected_weekdays:
+                    days.append(current_date)
+                    days_found += 1
+                current_date += timedelta(days=1)
+            else:
+                days.append(current_date)
+                days_found += 1
+                current_date += timedelta(days=interval)
+                
+        return days
+
     async def _trigger_homework_job(self, student_id: int, job_id: int, topic: str):
         logger.info(f"Triggering job {job_id} for student {student_id}")
         db = SessionLocal()
         try:
             job = db.query(ScheduledJob).filter(ScheduledJob.id == job_id).first()
             if not job or job.status != "pending":
-                logger.warning(f"Job {job_id} not found or not pending.")
                 return
 
-            job_type = job.job_type or "practice"  # default fallback
+            job_type = job.job_type or "practice"
             job.status = "sent"
             db.commit()
 
             if self.tutor_service:
-                # Route to the correct generator based on job_type
+                clean_topic = topic.split(" - ")[0] if " - " in topic else topic
+                
                 if job_type == "theory":
-                    content = await self.tutor_service.generate_theory(student_id, topic)
-                    tele_header = f"📚 **BÀI HỌC LÝ THUYẾT MỚI** 📚\n\nChủ đề: **{topic}**\n\n"
+                    content = await self.tutor_service.generate_theory(student_id, clean_topic)
+                    tele_header = f"📚 **BÀI HỌC LÝ THUYẾT MỚI** 📚\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n✅ Đọc và ghi nhớ lý thuyết. Khi sẵn sàng, hãy báo giáo viên!"
                 elif job_type == "practice":
-                    content = await self.tutor_service.generate_practice(student_id, topic)
-                    tele_header = f"✏️ **BÀI TẬP VẬN DỤNG** ✏️\n\nChủ đề: **{topic}**\n\n"
+                    content = await self.tutor_service.generate_practice(student_id, clean_topic)
+                    tele_header = f"✏️ **BÀI TẬP VẬN DỤNG** ✏️\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Hãy trả lời các câu trên. Bài tập vận dụng không tính điểm lộ trình!"
                 elif job_type == "exam":
-                    content = await self.tutor_service.generate_exam(student_id, topic)
-                    tele_header = f"📝 **BÀI KIỂM TRA CHÍNH THỨC** 📝\n\nChủ đề: **{topic}**\n\n"
+                    content = await self.tutor_service.generate_exam(student_id, clean_topic)
+                    tele_header = f"📝 **BÀI KIỂM TRA CHÍNH THỨC** 📝\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Hãy trả lời tất cả câu hỏi trên để được chấm điểm và cập nhật tiến độ lộ trình!"
-                else:  # free_practice
-                    content = await self.tutor_service.generate_free_practice(student_id, topic)
-                    tele_header = f"🎮 **BÀI TẬP TỰ DO Luyện Tập** 🎮\n\nChủ đề: **{topic}**\n\n"
+                else:
+                    content = await self.tutor_service.generate_free_practice(student_id, clean_topic)
+                    tele_header = f"🎮 **BÀI TẬP TỰ DO Luyện Tập** 🎮\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Đây là bài tập tự do bạn yêu cầu, hãy làm thoải mái để ôn tập nhé!"
 
-                ai_message = ChatMessage(
-                    student_id=student_id,
-                    sender="ai",
-                    message=content
-                )
+                ai_message = ChatMessage(student_id=student_id, sender="ai", message=content)
                 db.add(ai_message)
                 db.commit()
 
@@ -116,177 +273,9 @@ class SchedulerService:
                     from backend.telegram.bot import send_telegram_message
                     tele_message = tele_header + content + tele_footer
                     await send_telegram_message(student.telegram_id, tele_message)
-                    logger.info(f"Sent {job_type} content to student {student_id} via Telegram.")
-                else:
-                    logger.info(f"Student {student_id} has no Telegram linked. Content saved to database.")
             else:
                 logger.error("Tutor service not set in Scheduler.")
         except Exception as e:
             logger.error(f"Error executing job {job_id}: {e}")
-        finally:
-            db.close()
-
-    async def _check_auto_homework(self):
-        """Run every minute: check if any student's scheduled homework time has arrived."""
-        db = SessionLocal()
-        try:
-            now = datetime.now()
-            current_time_str = now.strftime("%H:%M")
-            day_of_week = now.weekday() # 0 = Monday, 6 = Sunday
-
-            students = db.query(Student).all()
-            for student in students:
-                # 1. Check if today is a learning day based on learning_frequency
-                freqStr = (student.learning_frequency or "").lower()
-                is_learning_day = False
-                
-                if freqStr:
-                    if "hằng ngày" in freqStr or "hàng ngày" in freqStr or "mỗi ngày" in freqStr or "daily" in freqStr:
-                        is_learning_day = True
-                    else:
-                        days_map = {
-                            'thứ 2': 0, 'thứ hai': 0,
-                            'thứ 3': 1, 'thứ ba': 1,
-                            'thứ 4': 2, 'thứ tư': 2,
-                            'thứ 5': 3, 'thứ năm': 3,
-                            'thứ 6': 4, 'thứ sáu': 4,
-                            'thứ 7': 5, 'thứ bảy': 5,
-                            'chủ nhật': 6
-                        }
-                        for day_str, day_num in days_map.items():
-                            if day_str in freqStr and day_of_week == day_num:
-                                is_learning_day = True
-                                break
-                        # fallback
-                        if not any(day_str in freqStr for day_str in days_map):
-                            is_learning_day = True
-                
-                # 2. Legacy check
-                if not is_learning_day and student.homework_frequency and student.homework_frequency > 0:
-                    if student.homework_time == current_time_str:
-                        is_learning_day = True
-                        times_to_trigger = [("Bài tập", student.homework_time)]
-                    else:
-                        times_to_trigger = []
-                elif is_learning_day:
-                    times_to_trigger = [
-                        ("Lý thuyết", student.theory_time),
-                        ("Bài tập vận dụng", student.practice_time),
-                        ("Kiểm tra", student.exam_time)
-                    ]
-                else:
-                    continue
-
-                # 3. Trigger jobs
-                for job_name, job_time in times_to_trigger:
-                    if not job_time:
-                        continue
-                        
-                    try:
-                        h, m = map(int, job_time.split(':'))
-                        run_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
-                    except ValueError:
-                        continue
-
-                    # Map job_name to job_type
-                    if job_name == "Lý thuyết":
-                        job_type = "theory"
-                    elif job_name == "Bài tập vận dụng":
-                        job_type = "practice"
-                    else:  # Kiểm tra
-                        job_type = "exam"
-
-                    # Find the active topic
-                    topic = "Ôn tập tổng hợp"
-                    roadmap = db.query(Roadmap).filter(
-                        Roadmap.student_id == student.id
-                    ).order_by(Roadmap.created_at.desc()).first()
-
-                    if roadmap:
-                        try:
-                            steps = json.loads(roadmap.content)
-                        except Exception:
-                            steps = []
-                        for step in steps:
-                            step_title = step.get("title", "")
-                            if not step_title:
-                                continue
-                            progress = db.query(Progress).filter(
-                                Progress.student_id == student.id,
-                                Progress.topic == step_title
-                            ).first()
-                            if not progress or progress.status != "completed":
-                                topic = step_title
-                                break
-
-                    full_topic = f"{topic} - {job_name}"
-                    
-                    # Check if already scheduled for this exact time
-                    existing_job = db.query(ScheduledJob).filter(
-                        ScheduledJob.student_id == student.id,
-                        ScheduledJob.topic == full_topic,
-                        ScheduledJob.scheduled_time == run_time
-                    ).first()
-
-                    if not existing_job:
-                        # Schedule if it's in the future or exactly now
-                        if run_time >= now:
-                            logger.info(f"Pre-scheduling {job_type} ({full_topic}) for student {student.id} at {run_time}")
-                            # await inside a sync loop? APScheduler is async, so we await
-                            await self.schedule_homework(student.id, full_topic, run_time, is_auto=True, job_type=job_type)
-                        elif run_time.hour == now.hour and run_time.minute == now.minute:
-                            logger.info(f"Auto-triggering {job_type} ({full_topic}) for student {student.id}")
-                            await self.schedule_homework(student.id, full_topic, now + timedelta(seconds=5), is_auto=True, job_type=job_type)
-
-        except Exception as e:
-            logger.error(f"Error in _check_auto_homework: {e}")
-        finally:
-            db.close()
-
-    async def schedule_post_task_report(self, student_id: int, topic: str, run_time: datetime) -> None:
-        try:
-            self.scheduler.add_job(
-                self._trigger_post_task_report,
-                'date',
-                run_date=run_time,
-                args=[student_id, topic],
-                id=f"post_task_report_{student_id}_{int(run_time.timestamp())}"
-            )
-            logger.info(f"Scheduled post-task report for student {student_id} at {run_time}")
-        except Exception as e:
-            logger.error(f"Failed to schedule post-task report: {e}")
-
-    async def _trigger_post_task_report(self, student_id: int, topic: str):
-        logger.info(f"Triggering post-task report for student {student_id} on {topic}")
-        if not self.tutor_service:
-            return
-        
-        db = SessionLocal()
-        try:
-            student = db.query(Student).filter(Student.id == student_id).first()
-            if not student or not student.telegram_id:
-                return
-
-            report = await self.tutor_service.generate_daily_report(db, student.id, topic)
-            if not report:
-                return
-
-            header = f"📊 **BÁO CÁO TÓM TẮT HẰNG NGÀY** 📊\n\n"
-            full_report = header + report
-
-            from backend.telegram.bot import send_telegram_message
-            await send_telegram_message(student.telegram_id, full_report)
-
-            # Also save to chat history
-            ai_message = ChatMessage(
-                student_id=student.id,
-                sender="ai",
-                message=full_report
-            )
-            db.add(ai_message)
-            db.commit()
-            logger.info(f"Sent post-task report to student {student.id}")
-        except Exception as e:
-            logger.error(f"Failed to send post-task report: {e}")
         finally:
             db.close()

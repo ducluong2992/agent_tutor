@@ -58,6 +58,11 @@ async def generate_roadmap(
                 db.add(progress)
         db.commit()
         
+        import backend.services.global_services as global_services
+        if global_services.scheduler_service:
+            import asyncio
+            asyncio.create_task(global_services.scheduler_service.update_schedule(student_id_int))
+        
         from backend.database.models import ChatMessage
         ai_msg = f"🗺️ **Lộ trình học tập môn {payload.subject} vừa được tạo!** Xem chi tiết ở cột bên phải.\n\n👉 **Bây giờ, hãy cùng thiết lập lịch học cho bạn nhé!**\n- Bạn muốn học theo chu kỳ nào (Ví dụ: Hằng ngày, cách 1 ngày, Thứ 2-4-6)?\n- Khung giờ học cụ thể cho mỗi phần trong ngày:\n  + Mấy giờ học lý thuyết?\n  + Mấy giờ làm bài tập vận dụng?\n  + Mấy giờ làm bài kiểm tra?"
         db.add(ChatMessage(student_id=student_id_int, sender="ai", message=ai_msg))
