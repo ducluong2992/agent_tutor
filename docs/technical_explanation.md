@@ -297,18 +297,80 @@ vector_query ≈ vector_1 (chunk về ví dụ giải pt)
 → LLM trả lời dựa trên tài liệu đã upload
 ```
 
-#### 3.5 Lưu ý về dự án hiện tại (SimpleDummyEmbeddingFunction)
-Trong code hiện tại, hàm embedding là **dummy** (trả về vector toàn số 0):
+#### 3.5 Hàm Embedding thực tế — SmartEmbeddingFunction
+
+Hệ thống sử dụng `SmartEmbeddingFunction` — một hàm embedding **tự động chọn
+model phù hợp** dựa trên provider LLM đang được cấu hình trên Dashboard.
+
 ```python
-# rag_service.py
-class SimpleDummyEmbeddingFunction:
-    def __call__(self, input):
-        return [[0.0] * 384 for _ in input]  # Vector giả
+# rag_service.py — SmartEmbeddingFunction
+class SmartEmbeddingFunction:
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        provider = os.getenv("LLM_PROVIDER", "mock")
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+
+        # Tự động chọn hàm embedding theo provider đang dùng
+        self._active_emb = self._get_embedding_fn(provider, openai_key, gemini_key)
+        return self._active_emb(input)
 ```
-Điều này có nghĩa ChromaDB chưa thực sự so sánh ngữ nghĩa — nó sẽ fallback
-về tìm kiếm từ khóa đơn giản. Để hệ thống RAG hoạt động đúng nghĩa vector,
-cần thay bằng model embedding thực (ví dụ: `all-MiniLM-L6-v2` từ
-`sentence-transformers`, hoặc `text-embedding-3-small` của OpenAI).
+
+**3 tầng ưu tiên embedding:**
+
+| Ưu tiên | Điều kiện | Model sử dụng | Số chiều vector | Ghi chú |
+|---|---|---|---|---|
+| 1 | Provider = `openai` + có API key | `text-embedding-3-small` | 1536 | Gọi API OpenAI (tốn token) |
+| 2 | Provider = `gemini` + có API key | `text-embedding-004` | 768 | Gọi API Google (tốn token) |
+| 3 | Mặc định (mọi trường hợp khác) | `all-MiniLM-L6-v2` (ONNX) | 384 | Chạy **offline trên CPU**, miễn phí |
+
+```python
+# rag_service.py — Logic chọn embedding
+def _get_embedding_fn(self, provider, openai_key, gemini_key):
+    if provider == "openai" and openai_key:
+        return embedding_functions.OpenAIEmbeddingFunction(
+            api_key=openai_key, model_name="text-embedding-3-small"
+        )
+    elif provider == "gemini" and gemini_key:
+        return embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+            api_key=gemini_key, model_name="models/text-embedding-004"
+        )
+    # Mặc định: model ONNX chạy local, không cần API
+    return embedding_functions.DefaultEmbeddingFunction()  # all-MiniLM-L6-v2
+```
+
+**Luồng ưu tiên khi gọi embedding:**
+```
+SmartEmbeddingFunction.__call__(texts)
+    │
+    ├── [1] Đọc LLM_PROVIDER từ env → chọn model embedding tương ứng
+    │
+    ├── [2] Gọi model embedding đã chọn
+    │       ├── Thành công → trả về vectors
+    │       └── Thất bại → fallback xuống tầng dưới
+    │
+    └── [3] Fallback cuối cùng: local ONNX (all-MiniLM-L6-v2)
+            └── Nếu ONNX cũng lỗi → trả vector dummy [0.0] * 384
+```
+
+**Cơ chế tự phục hồi khi đổi provider (Dimension Mismatch):**
+
+Khi đổi provider (ví dụ: từ OpenAI 1536 chiều sang local ONNX 384 chiều),
+vector cũ đã lưu trong ChromaDB sẽ không khớp số chiều với vector mới.
+Hệ thống tự động xử lý bằng cách **xóa collection cũ và tạo lại**:
+
+```python
+# rag_service.py — add_document() và query_documents()
+except Exception as e:
+    if "dimension" in str(e).lower() or "match" in str(e).lower():
+        # Xóa collection cũ (vector lệch chiều) → tạo lại
+        self.client.delete_collection(f"student_{student_id}_docs")
+        collection = self.get_collection(student_id)  # Tạo mới
+        collection.add(documents=chunks, ids=ids, ...)  # Lưu lại
+```
+
+> **Lưu ý:** Khi đổi provider, tài liệu đã upload cần được **re-upload** để
+> embedding lại bằng model mới. Tài liệu gốc vẫn được lưu trong DB (bảng `Document`)
+> nên không bị mất dữ liệu.
 
 > **Kết luận:** File upload → parse text → chunk → vector → lưu ChromaDB.
 > Khi user hỏi → câu hỏi cũng được vector hóa → so sánh khoảng cách
