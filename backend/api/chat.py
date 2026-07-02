@@ -24,13 +24,25 @@ async def send_message(
         raise HTTPException(status_code=500, detail="Tutor service not initialized")
         
     try:
+        import time
+        start_time = time.time()
+        
         reply, action = await tutor_service.handle_message(
             db, int(student_id), payload.message
         )
+        
+        end_time = time.time()
+        exec_time = round(end_time - start_time, 2)
+        
+        llm_service = request.app.state.llm_service
+        token_usage = getattr(llm_service, "last_token_usage", None)
+        
         return {
             "status": "success",
             "reply": reply,
-            "action": action
+            "action": action,
+            "execution_time_seconds": exec_time,
+            "token_usage": token_usage
         }
     except Exception as e:
         import traceback

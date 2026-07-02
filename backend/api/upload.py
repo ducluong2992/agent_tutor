@@ -21,6 +21,13 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
+# Try PyMuPDF import
+try:
+    import fitz
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 @router.post("")
@@ -41,6 +48,10 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Only PDF, DOCX and TXT files are supported")
         
     try:
+        import time
+        start_time = time.time()
+        total_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        
         content = ""
         # Write file content to a temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
@@ -53,13 +64,61 @@ async def upload_document(
             with open(tmp_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         elif file_ext == ".pdf":
-            if not PDF_AVAILABLE:
+            if PYMUPDF_AVAILABLE:
+                doc = fitz.open(tmp_path)
+                llm_service = request.app.state.llm_service
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    text = page.get_text()
+                    images = page.get_images()
+                    
+                    has_images = len(images) > 0
+                    has_drawings = False
+                    if len(text.strip()) < 100:
+                        try:
+                            has_drawings = len(page.get_drawings()) > 0
+                        except Exception:
+                            pass
+                    
+                    if has_images or has_drawings:
+                        # Page has images or graphics. Render to PNG.
+                        try:
+                            pix = page.get_pixmap(dpi=150)
+                            img_bytes = pix.tobytes("png")
+                            
+                            prompt = (
+                                f"Đây là trang {page_num + 1} của tài liệu học tập PDF tải lên. Trang này chứa hình ảnh, hình vẽ, sơ đồ hoặc đồ thị. "
+                                "Hãy đọc kỹ, trích xuất toàn bộ văn bản và cung cấp mô tả chi tiết, đầy đủ nhất cho các hình ảnh, sơ đồ hoặc đồ thị "
+                                "trên trang này bằng tiếng Việt để hỗ trợ việc dạy học của AI Tutor. "
+                                "Đảm bảo giữ lại các công thức toán học và nội dung bài tập."
+                            )
+                            
+                            page_description = await llm_service.analyze_page_image(img_bytes, prompt)
+                            
+                            usage = getattr(llm_service, "last_token_usage", None)
+                            if usage:
+                                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+                            if page_description:
+                                content += f"\n--- Trang {page_num + 1} (Phân tích từ ảnh) ---\n{page_description}\n"
+                            else:
+                                content += f"\n--- Trang {page_num + 1} (Văn bản gốc) ---\n{text}\n"
+                        except Exception as e:
+                            content += f"\n--- Trang {page_num + 1} (Lỗi phân tích ảnh - Văn bản gốc) ---\n{text}\n"
+                    else:
+                        # Page only has text, extract directly
+                        if text.strip():
+                            content += f"\n--- Trang {page_num + 1} (Văn bản) ---\n{text}\n"
+            elif PDF_AVAILABLE:
+                reader = PdfReader(tmp_path)
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        content += text + "\n"
+            else:
                 raise HTTPException(status_code=500, detail="PDF parser dependency not installed")
-            reader = PdfReader(tmp_path)
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    content += text + "\n"
         elif file_ext == ".docx":
             if not DOCX_AVAILABLE:
                 raise HTTPException(status_code=500, detail="DOCX parser dependency not installed")
@@ -100,6 +159,9 @@ async def upload_document(
         rag_service = request.app.state.rag_service
         if rag_service:
             rag_service.add_document(student_id_int, db_doc.id, filename, content)
+            
+        end_time = time.time()
+        exec_time = round(end_time - start_time, 2)
         
         return {
             "status": "success",
@@ -107,7 +169,9 @@ async def upload_document(
                 "id": db_doc.id,
                 "filename": db_doc.filename,
                 "file_type": db_doc.file_type
-            }
+            },
+            "execution_time_seconds": exec_time,
+            "token_usage": total_token_usage if total_token_usage["total_tokens"] > 0 else None
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

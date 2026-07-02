@@ -204,3 +204,73 @@ def test_roadmap_generation():
     get_response2 = client.get("/api/roadmap")
     get_data2 = get_response2.json()
     assert get_data2["steps"][0]["status"] == "completed"
+
+def test_upload_txt():
+    # Register/Login to get cookies
+    client.post(
+        "/onboarding",
+        data={
+            "action": "register",
+            "name": "Test Student",
+            "email": "test@student.com",
+            "learning_goals": "Learn Python",
+            "skill_level": "Beginner"
+        }
+    )
+
+    # Upload txt file
+    file_content = b"Day la tai lieu kiem tra text file."
+    response = client.post(
+        "/api/upload",
+        files={"file": ("test_doc.txt", file_content, "text/plain")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["document"]["filename"] == "test_doc.txt"
+    assert data["document"]["file_type"] == "txt"
+
+def test_upload_pdf():
+    # Register/Login
+    client.post(
+        "/onboarding",
+        data={
+            "action": "register",
+            "name": "Test Student",
+            "email": "test@student.com",
+            "learning_goals": "Learn Python",
+            "skill_level": "Beginner"
+        }
+    )
+
+    # Create a dummy PDF with fitz
+    import fitz
+    from PIL import Image
+    import io
+
+    doc = fitz.open()
+    # Page 1: Text only
+    page1 = doc.new_page()
+    page1.insert_text((72, 72), "Day la trang 1 chua text.")
+
+    # Page 2: Contains an image
+    page2 = doc.new_page()
+    img = Image.new('RGB', (100, 100), color='blue')
+    img_io = io.BytesIO()
+    img.save(img_io, format='PNG')
+    img_bytes = img_io.getvalue()
+    page2.insert_image(page2.rect, stream=img_bytes)
+
+    pdf_bytes = doc.write()
+    doc.close()
+
+    # Upload PDF file
+    response = client.post(
+        "/api/upload",
+        files={"file": ("test_doc.pdf", pdf_bytes, "application/pdf")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["document"]["filename"] == "test_doc.pdf"
+    assert data["document"]["file_type"] == "pdf"

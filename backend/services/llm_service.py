@@ -65,6 +65,7 @@ class LLMService:
 
     async def generate_response(self, system_prompt: str, user_prompt: str, chat_history: List[Dict[str, str]] = None) -> str:
         if self.api_provider == "mock":
+            self.last_token_usage = {"prompt_tokens": 15, "completion_tokens": 45, "total_tokens": 60}
             return self.get_mock_fallback(system_prompt, user_prompt)
 
         # Build ordered list of providers to try: primary first, then others as fallback
@@ -79,7 +80,120 @@ class LLMService:
                 return result
 
         logger.warning("All LLM providers failed. Using mock fallback.")
+        self.last_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         return self.get_mock_fallback(system_prompt, user_prompt)
+
+    async def analyze_page_image(self, image_bytes: bytes, prompt: str) -> str:
+        if self.api_provider == "mock":
+            self.last_token_usage = {"prompt_tokens": 250, "completion_tokens": 50, "total_tokens": 300}
+            return "[Mock AI Image Description: Mô tả hình ảnh trang tài liệu học tập, bao gồm các hình vẽ và bài tập toán học.]"
+
+        provider_order = [self.api_provider]
+        for p in ["gemini", "openrouter", "openai"]:
+            if p not in provider_order:
+                provider_order.append(p)
+
+        for provider in provider_order:
+            result = await self._try_provider_image(provider, image_bytes, prompt)
+            if result is not None:
+                return result
+
+        logger.warning("All LLM providers failed to analyze image. Returning fallback message.")
+        return "[Lỗi: Tất cả các nhà cung cấp AI đều không thể phân tích ảnh này.]"
+
+    async def _try_provider_image(self, provider: str, image_bytes: bytes, prompt: str) -> str:
+        if provider == "gemini" and self.gemini_client:
+            try:
+                import io
+                from PIL import Image
+                image = Image.open(io.BytesIO(image_bytes))
+                
+                model = self.gemini_client.GenerativeModel(model_name=self.gemini_model)
+                response = model.generate_content([image, prompt])
+                if hasattr(response, 'usage_metadata'):
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0),
+                        "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0),
+                        "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0)
+                    }
+                return response.text
+            except Exception as e:
+                logger.error(f"Gemini image analysis failed: {e}")
+                return None
+
+        elif provider == "openai" and self.openai_client:
+            try:
+                import base64
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+                
+                response = self.openai_client.chat.completions.create(
+                    model=self.openai_model,
+                    messages=messages,
+                    max_tokens=1000
+                )
+                if hasattr(response, 'usage') and response.usage:
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                        "total_tokens": getattr(response.usage, 'total_tokens', 0)
+                    }
+                return response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"OpenAI image analysis failed: {e}")
+                return None
+
+        elif provider == "openrouter" and self.openrouter_client:
+            try:
+                import base64
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+                
+                response = self.openrouter_client.chat.completions.create(
+                    model=self.openrouter_model,
+                    messages=messages,
+                    max_tokens=1000
+                )
+                if hasattr(response, 'usage') and response.usage:
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                        "total_tokens": getattr(response.usage, 'total_tokens', 0)
+                    }
+                return response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"OpenRouter image analysis failed: {e}")
+                return None
+
+        return None
 
     async def _try_provider(self, provider: str, system_prompt: str, user_prompt: str, chat_history: List[Dict[str, str]] = None) -> str:
         """Try a single provider. Returns response string on success, None on failure."""
@@ -91,6 +205,11 @@ class LLMService:
                     system_instruction=system_prompt if system_prompt else None
                 )
 
+                is_json_required = "valid JSON object" in system_prompt if system_prompt else False
+                generation_config = {}
+                if is_json_required:
+                    generation_config["response_mime_type"] = "application/json"
+
                 contents = []
                 if chat_history:
                     for msg in chat_history:
@@ -98,7 +217,13 @@ class LLMService:
                         contents.append({"role": role, "parts": [msg["content"]]})
                 contents.append({"role": "user", "parts": [user_prompt]})
 
-                response = model.generate_content(contents)
+                response = model.generate_content(contents, generation_config=generation_config if generation_config else None)
+                if hasattr(response, 'usage_metadata'):
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0),
+                        "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0),
+                        "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0)
+                    }
                 return response.text
             except Exception as e:
                 logger.error(f"Gemini API call failed: {e}. Trying next provider...")
@@ -106,12 +231,23 @@ class LLMService:
 
         elif provider == "openai" and self.openai_client:
             try:
+                is_json_required = "valid JSON object" in system_prompt if system_prompt else False
                 messages = self._build_openai_messages(system_prompt, user_prompt, chat_history)
-                response = self.openai_client.chat.completions.create(
-                    model=self.openai_model,
-                    messages=messages,
-                    temperature=0.7
-                )
+                kwargs = {
+                    "model": self.openai_model,
+                    "messages": messages,
+                    "temperature": 0.7
+                }
+                if is_json_required:
+                    kwargs["response_format"] = {"type": "json_object"}
+                    
+                response = self.openai_client.chat.completions.create(**kwargs)
+                if hasattr(response, 'usage') and response.usage:
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                        "total_tokens": getattr(response.usage, 'total_tokens', 0)
+                    }
                 return response.choices[0].message.content
             except Exception as e:
                 logger.error(f"OpenAI API call failed: {e}. Trying next provider...")
@@ -119,12 +255,23 @@ class LLMService:
 
         elif provider == "openrouter" and self.openrouter_client:
             try:
+                is_json_required = "valid JSON object" in system_prompt if system_prompt else False
                 messages = self._build_openai_messages(system_prompt, user_prompt, chat_history)
-                response = self.openrouter_client.chat.completions.create(
-                    model=self.openrouter_model,
-                    messages=messages,
-                    temperature=0.7
-                )
+                kwargs = {
+                    "model": self.openrouter_model,
+                    "messages": messages,
+                    "temperature": 0.7
+                }
+                if is_json_required:
+                    kwargs["response_format"] = {"type": "json_object"}
+
+                response = self.openrouter_client.chat.completions.create(**kwargs)
+                if hasattr(response, 'usage') and response.usage:
+                    self.last_token_usage = {
+                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                        "total_tokens": getattr(response.usage, 'total_tokens', 0)
+                    }
                 return response.choices[0].message.content
             except Exception as e:
                 logger.error(f"OpenRouter API call failed: {e}. Trying next provider...")

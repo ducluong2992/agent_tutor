@@ -208,6 +208,7 @@
 
             // Add user message to UI
             appendChatMessage('user', message);
+            currentMessageCount++;
 
             // Add typing indicator
             const typingId = appendTypingIndicator();
@@ -225,7 +226,24 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    appendChatMessage('ai', data.reply);
+                    
+                    // Display token usage and time info
+                    let metaHtml = '';
+                    if (data.execution_time_seconds) {
+                        metaHtml += `⏱️ Đã nghĩ trong ${data.execution_time_seconds}s`;
+                    }
+                    if (data.token_usage) {
+                        const total = data.token_usage.total_tokens || 0;
+                        const prompt = data.token_usage.prompt_tokens || 0;
+                        const completion = data.token_usage.completion_tokens || 0;
+                        metaHtml += ` | 🪙 Token: ${total} (Prompt: ${prompt}, Trả lời: ${completion})`;
+                    }
+                    if (metaHtml) {
+                        metaHtml = `<div style="font-size: 0.75rem; opacity: 0.6; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">${metaHtml}</div>`;
+                    }
+                    
+                    appendChatMessage('ai', data.reply + metaHtml);
+                    currentMessageCount++;
 
                     // If action was executed, refresh components
                     if (data.action) {
@@ -339,6 +357,7 @@
             typing.className = 'chat-bubble ai typing-indicator-bubble';
             typing.innerHTML = `
                 <div class="chat-bubble-content">
+                    <span style="font-style: italic; opacity: 0.8; margin-right: 8px;">Đang suy nghĩ... <span id="${id}_timer">0</span>s</span>
                     <span class="dot"></span>
                     <span class="dot"></span>
                     <span class="dot"></span>
@@ -346,12 +365,24 @@
             `;
             container.appendChild(typing);
             scrollChatToBottom();
+            
+            // Start timer
+            let seconds = 0;
+            typing.dataset.intervalId = setInterval(() => {
+                seconds++;
+                const timerEl = document.getElementById(`${id}_timer`);
+                if (timerEl) timerEl.innerText = seconds;
+            }, 1000);
+            
             return id;
         }
 
         function removeTypingIndicator(id) {
             const el = document.getElementById(id);
-            if (el) el.remove();
+            if (el) {
+                if (el.dataset.intervalId) clearInterval(el.dataset.intervalId);
+                el.remove();
+            }
         }
 
         // Profile update
@@ -423,7 +454,13 @@
                 });
 
                 if (response.ok) {
-                    statusDiv.innerText = ` Đã xử lý thành công file ${file.name}`;
+                    const data = await response.json();
+                    
+                    let metaInfo = '';
+                    if (data.execution_time_seconds) metaInfo += ` (Thời gian: ${data.execution_time_seconds}s)`;
+                    if (data.token_usage && data.token_usage.total_tokens !== undefined) metaInfo += ` | 🪙 Token AI đã dùng: ${data.token_usage.total_tokens}`;
+                    
+                    statusDiv.innerText = ` Đã xử lý thành công file ${file.name} ${metaInfo}`;
                     statusDiv.className = 'upload-status mt-2 text-xs text-green-400';
                     input.value = ''; // clear input
                     loadDocuments();

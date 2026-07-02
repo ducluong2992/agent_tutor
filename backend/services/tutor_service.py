@@ -142,7 +142,8 @@ CRITICAL GRADING RULE:
 - Format your reply beautifully using Markdown. Use proper line breaks (double newline \n\n) between paragraphs and use bullet points (-) for lists.
 - Be warm, encouraging and natural — like a real human tutor
 
-CRITICAL: You MUST respond ONLY as a valid JSON object (no markdown wrapper).
+CRITICAL: You MUST respond ONLY as a valid JSON object. Do NOT wrap your response in markdown blocks like ```json ... ```. 
+Your entire output MUST be parsable by json.loads().
 Structure:
 {{
   "reply": "Your full tutor response here using markdown for formatting.",
@@ -157,10 +158,13 @@ Structure:
   "params": {{
     "topic": "Unit 1: Phép tính cơ bản",
     "scheduled_time": "2026-06-20T20:00:00",
+    "delay_minutes": 5,
     "job_type": "free_practice"
   }}
 }}
-NOTE: job_type can be "theory", "practice", "exam", or "free_practice". If student just asks for exercises/practice freely, use "free_practice". Today's datetime is {datetime.now().isoformat()}. If no date given, schedule for tomorrow.
+NOTE: job_type can be "theory", "practice", "exam", or "free_practice". If student asks for exercises/practice freely, use "free_practice". 
+Today's datetime is {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. 
+CRITICAL: If the user says "sau X phút" (in X minutes), you MUST provide "delay_minutes": X. If they specify an exact time (like "lúc 20:00"), provide "scheduled_time": "YYYY-MM-DDTHH:MM:00". If no date/time given, schedule for tomorrow.
 
 2. Generate Roadmap:
 {{
@@ -315,11 +319,24 @@ NOTE: task_type = 'theory' or 'exercise'. Only use when student explicitly says 
                 # Parse scheduled time
                 scheduled_time_str = params.get("scheduled_time")
                 run_time = None
-                if scheduled_time_str:
+                
+                # Check for delay_minutes first
+                if "delay_minutes" in params:
+                    try:
+                        delay_mins = int(params["delay_minutes"])
+                        run_time = datetime.now() + timedelta(minutes=delay_mins)
+                    except (ValueError, TypeError):
+                        pass
+                
+                if not run_time and scheduled_time_str:
                     try:
                         run_time = datetime.fromisoformat(scheduled_time_str)
                     except ValueError:
-                        pass
+                        # Sometimes LLM outputs YYYY-MM-DD HH:MM:SS instead of ISO format
+                        try:
+                            run_time = datetime.strptime(scheduled_time_str, "%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            pass
                 
                 # Handling mock fallback parameter delay_seconds
                 if not run_time and "delay_seconds" in params:
