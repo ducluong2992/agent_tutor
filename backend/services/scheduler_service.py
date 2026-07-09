@@ -249,21 +249,50 @@ class SchedulerService:
                 
                 if job_type == "theory":
                     content = await self.tutor_service.generate_theory(student_id, clean_topic)
+                    intro_msg = (
+                        f"📚 **Đã đến giờ học LÍ THUYẾT!**\n\n"
+                        f"Chủ đề hôm nay: **{clean_topic}**\n\n"
+                        f"Giáo viên đã chuẩn bị bài học lý thuyết đầy đủ gồm: khái niệm, công thức và ví dụ minh họa. "
+                        f"Hãy đọc kỹ và bấm **\"Đã đọc xong\"** khi hoàn thành nhé! ✨"
+                    )
                     tele_header = f"📚 **BÀI HỌC LÝ THUYẾT MỚI** 📚\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n✅ Đọc và ghi nhớ lý thuyết. Khi sẵn sàng, hãy báo giáo viên!"
                 elif job_type == "practice":
                     content = await self.tutor_service.generate_practice(student_id, clean_topic)
+                    intro_msg = (
+                        f"✏️ **Đã đến giờ làm BÀI TẬP VẬN DỤNG!**\n\n"
+                        f"Chủ đề: **{clean_topic}**\n\n"
+                        f"Dưới đây là các câu hỏi vận dụng để giúp em củng cố kiến thức. "
+                        f"Làm hết câu hỏi rồi bấm **\"Nộp bài\"** nhé! "
+                        f"*(Lưu ý: Bài tập vận dụng không tính điểm lộ trình — chỉ để luyện tập!)* 💪"
+                    )
                     tele_header = f"✏️ **BÀI TẬP VẬN DỤNG** ✏️\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Hãy trả lời các câu trên. Bài tập vận dụng không tính điểm lộ trình!"
                 elif job_type == "exam":
                     content = await self.tutor_service.generate_exam(student_id, clean_topic)
+                    intro_msg = (
+                        f"📝 **Đã đến giờ làm BÀI KIỂM TRA!**\n\n"
+                        f"Chủ đề: **{clean_topic}**\n\n"
+                        f"Đây là bài kiểm tra chính thức. Kết quả sẽ được **lưu vào lộ trình học tập** "
+                        f"và quyết định việc mở khóa bài tiếp theo. "
+                        f"Hãy làm bài nghiêm túc và bấm **\"Nộp bài\"** khi xong! 🎯\n\n"
+                        f"*(Đạt từ 5/10 điểm trở lên để hoàn thành và mở khóa bài tiếp theo)*"
+                    )
                     tele_header = f"📝 **BÀI KIỂM TRA CHÍNH THỨC** 📝\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Hãy trả lời tất cả câu hỏi trên để được chấm điểm và cập nhật tiến độ lộ trình!"
                 else:
                     content = await self.tutor_service.generate_free_practice(student_id, clean_topic)
+                    intro_msg = (
+                        f"🎮 **Bài tập tự do — Luyện tập thoải mái!**\n\n"
+                        f"Chủ đề: **{clean_topic}**\n\n"
+                        f"Đây là bài tập em đã yêu cầu. Làm thoải mái để ôn tập nhé! 😊"
+                    )
                     tele_header = f"🎮 **BÀI TẬP TỰ DO Luyện Tập** 🎮\n\nChủ đề: **{clean_topic}**\n\n"
                     tele_footer = "\n\n📌 Đây là bài tập tự do bạn yêu cầu, hãy làm thoải mái để ôn tập nhé!"
 
+                # Save intro announcement first, then the interactive widget
+                intro_message = ChatMessage(student_id=student_id, sender="ai", message=intro_msg)
+                db.add(intro_message)
                 ai_message = ChatMessage(student_id=student_id, sender="ai", message=content)
                 db.add(ai_message)
                 db.commit()
@@ -271,7 +300,13 @@ class SchedulerService:
                 student = db.query(Student).filter(Student.id == student_id).first()
                 if student and student.telegram_id:
                     from backend.telegram.bot import send_telegram_message
-                    tele_message = tele_header + content + tele_footer
+
+                    if content.startswith("[INTERACTIVE_TASK]"):
+                        tele_content = "💻 Hệ thống đã tạo một Giao diện Tương tác riêng cho phần này. Vui lòng truy cập Web Dashboard để đọc lý thuyết và làm bài tập nhé!"
+                    else:
+                        tele_content = content
+
+                    tele_message = tele_header + tele_content + tele_footer
                     await send_telegram_message(student.telegram_id, tele_message)
             else:
                 logger.error("Tutor service not set in Scheduler.")

@@ -7,6 +7,7 @@
     <title>Onboarding - AI Tutor Platform</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 
 <body class="flex-center min-h-screen body-gradient">
@@ -42,7 +43,7 @@
                     <input type="password" id="password" name="password" class="form-input" required
                         placeholder="Nhập mật khẩu" style="padding-right: 40px;">
                     <button type="button" onclick="togglePassword('password', this)"
-                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;">👁️</button>
+                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;"><i class="bi bi-eye"></i></button>
                 </div>
                 <small id="password-hint" class="form-text text-muted"
                     style="font-size: 0.8em; color: #666; display: block; margin-top: 5px;">Tối thiểu 8 ký tự, 1 chữ
@@ -55,7 +56,7 @@
                     <input type="password" id="confirm_password" name="confirm_password" class="form-input"
                         placeholder="Nhập lại mật khẩu" style="padding-right: 40px;">
                     <button type="button" onclick="togglePassword('confirm_password', this)"
-                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;">👁️</button>
+                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;"><i class="bi bi-eye"></i></button>
                 </div>
             </div>
 
@@ -104,12 +105,15 @@
 
         function togglePassword(inputId, btn) {
             const input = document.getElementById(inputId);
+            const icon = btn.querySelector('i');
             if (input.type === "password") {
                 input.type = "text";
-                btn.textContent = "🙈";
+                icon.classList.remove('bi-eye');
+                icon.classList.add('bi-eye-slash');
             } else {
                 input.type = "password";
-                btn.textContent = "👁️";
+                icon.classList.remove('bi-eye-slash');
+                icon.classList.add('bi-eye');
             }
         }
 

@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Tutor Platform - Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="/static/css/style.css?v=2">
 </head>
 
@@ -32,7 +33,7 @@
 
             <!-- Learning Roadmap Section -->
             <div class="card glassmorphism p-5 mb-5">
-                <h2 class="card-title"> LỘ TRÌNH HỌC TẬP </h2>
+                <h2 class="card-title"><i class="bi bi-map"></i> LỘ TRÌNH HỌC TẬP</h2>
 
                 <div class="roadmap-generator mb-4">
                     <div class="mb-3 text-sm opacity-80">
@@ -67,7 +68,7 @@
 
             <!-- Documents & RAG Upload -->
             <div class="card glassmorphism p-5 mb-5">
-                <h2 class="card-title"> TÀI LIỆU HỌC TẬP </h2>
+                <h2 class="card-title"><i class="bi bi-folder2-open"></i> TÀI LIỆU HỌC TẬP</h2>
                 <div class="upload-zone mb-3">
                     <label class="btn btn-secondary btn-sm w-full cursor-pointer text-center">
                         Tải tài liệu lên (.pdf, .docx, .txt)
@@ -105,7 +106,7 @@
                             <h3>Gia sư AI cá nhân</h3>
                         </div>
                         <button onclick="clearChatHistory()" class="btn btn-primary btn-sm"
-                            title="Xóa toàn bộ dữ liệu">Xóa dữ liệu</button>
+                            title="Xóa toàn bộ dữ liệu"><i class="bi bi-trash3"></i> Xóa dữ liệu</button>
                     </div>
                     <span class="chat-desc">Nhập chat bên dưới hoặc gõ "lập lộ trình học python", "giao bài tập cho tôi
                         sau 1 phút"</span>
@@ -138,7 +139,7 @@
 
             <!-- Schedule Widget -->
             <div class="card glassmorphism p-5 mb-5">
-                <h2 class="card-title"> 📅 LỊCH HỌC HÔM NAY </h2>
+                <h2 class="card-title"><i class="bi bi-calendar3"></i> LỊCH HỌC HÔM NAY</h2>
                 <div id="today-schedule-widget" class="mt-4">
                     <!-- Injected via JS -->
                 </div>
@@ -327,15 +328,112 @@
             const bubble = document.createElement('div');
             bubble.className = `chat-bubble ${sender}`;
 
-            // Basic markdown parsing for bold and bullet points
-            let formattedText = text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .replace(/\n/g, '<br>')
-                .replace(/^(?:&nbsp;|\s)*•\s+(.*)/gm, '<li>$1</li>'); // basic bullet list item
+            if (text.trim().startsWith('[INTERACTIVE_TASK]')) {
+                try {
+                    let jsonStr = text.trim().substring('[INTERACTIVE_TASK]'.length).trim();
+                    // Remove appended metaHtml if present
+                    const divIndex = jsonStr.lastIndexOf('<div style="font-size: 0.75rem;');
+                    if (divIndex !== -1) {
+                        jsonStr = jsonStr.substring(0, divIndex).trim();
+                    }
+                    const taskData = JSON.parse(jsonStr);
+                    const title = taskData.topic || (taskData.type === 'theory' ? 'Bài học lý thuyết mới' : 'Bài kiểm tra / Bài tập mới');
+                    const taskId = 'task_' + Date.now() + Math.random().toString(36).substr(2, 9);
+                    window.interactiveTasks = window.interactiveTasks || {};
+                    window.interactiveTasks[taskId] = taskData;
 
-            bubble.innerHTML = `<div class="chat-bubble-content">${formattedText}</div>`;
+                    const isTheory = taskData.type === 'theory';
+                    const isPractice = taskData.type === 'practice';
+                    const isExam = taskData.type === 'exam';
+
+                    // --- Header config by type ---
+                    let headerIcon, headerLabel, headerColor, headerBg, sectionColor;
+                    if (isTheory) {
+                        headerIcon = 'bi-book-half'; headerLabel = 'LÍ THUYẾT';
+                        headerColor = '#60a5fa'; headerBg = 'rgba(96,165,250,0.08)';
+                        sectionColor = '#93c5fd';
+                    } else if (isPractice) {
+                        headerIcon = 'bi-pencil-square'; headerLabel = 'BÀI TẬP VẬN DỤNG';
+                        headerColor = '#34d399'; headerBg = 'rgba(52,211,153,0.08)';
+                        sectionColor = '#6ee7b7';
+                    } else {
+                        headerIcon = 'bi-journal-check'; headerLabel = 'BÀI KIỂM TRA';
+                        headerColor = '#f87171'; headerBg = 'rgba(248,113,113,0.08)';
+                        sectionColor = '#fca5a5';
+                    }
+
+                    let inlineHtml = `
+                    <div class="interactive-task-card" style="background: ${headerBg}; border: 1px solid ${headerColor}33; border-radius: 14px; padding: 0; margin-top: 8px; overflow: hidden;">
+                        <div style="background: ${headerColor}15; border-bottom: 1px solid ${headerColor}33; padding: 12px 16px; display: flex; align-items: center; gap: 10px;">
+                            <i class="bi ${headerIcon}" style="font-size: 1.3rem; color: ${headerColor};"></i>
+                            <div>
+                                <div style="font-size: 0.7rem; font-weight: 700; letter-spacing: 1.5px; color: ${headerColor}; opacity: 0.8; text-transform: uppercase;">${headerLabel}</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 1px;">${title}</div>
+                            </div>
+                        </div>
+                        <div style="padding: 16px;">`;
+
+                    if (isTheory) {
+                        if (taskData.sections && Array.isArray(taskData.sections)) {
+                            taskData.sections.forEach(sec => {
+                                // Detect if this section is an example section
+                                const isExample = sec.title && /ví dụ|example|minh họa/i.test(sec.title);
+                                const secIcon = isExample ? 'bi-lightbulb' : 'bi-bookmark-fill';
+                                const secBg = isExample ? 'rgba(251,191,36,0.08)' : 'rgba(0,0,0,0.2)';
+                                const secBorder = isExample ? '1px solid rgba(251,191,36,0.3)' : 'none';
+                                const secTitleColor = isExample ? '#fbbf24' : sectionColor;
+                                inlineHtml += `<div style="margin-bottom: 14px; background: ${secBg}; border: ${secBorder}; border-radius: 8px; padding: 12px;">`;
+                                if (sec.title) inlineHtml += `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;"><i class="bi ${secIcon}" style="color: ${secTitleColor}; font-size: 0.9rem;"></i><span style="font-weight: 700; font-size: 0.88rem; color: ${secTitleColor}; text-transform: uppercase; letter-spacing: 0.5px;">${sec.title}</span></div>`;
+                                inlineHtml += `<div style="font-size: 0.93rem; line-height: 1.65; white-space: pre-wrap; color: rgba(255,255,255,0.88);">${sec.content}</div>`;
+                                inlineHtml += `</div>`;
+                            });
+                        }
+                        inlineHtml += `<button class="btn btn-primary btn-sm w-full" style="margin-top: 8px; background: ${headerColor}22; border: 1px solid ${headerColor}66; color: ${headerColor}; font-weight: 700;" onclick='submitInlineTask("${taskId}", "theory", ${JSON.stringify(title)})'><i class="bi bi-check2-circle"></i> Đã đọc xong</button>`;
+                    } else {
+                        if (taskData.questions && Array.isArray(taskData.questions)) {
+                            taskData.questions.forEach((q, idx) => {
+                                inlineHtml += `<div style="margin-bottom: 14px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border-left: 3px solid ${headerColor}55;">`;
+                                inlineHtml += `<p style="font-weight: 600; margin-bottom: 10px; font-size: 0.93rem; color: #fff;"><i class="bi bi-question-circle" style="color: ${sectionColor}; margin-right: 5px;"></i>Câu ${idx + 1}: ${q.question}</p>`;
+
+                                if (q.type === 'radio' && q.options) {
+                                    q.options.forEach((opt, oIdx) => {
+                                        const letters = ['A', 'B', 'C', 'D', 'E'];
+                                        inlineHtml += `<label style="display: flex; align-items: center; gap: 8px; margin-bottom: 7px; cursor: pointer; padding: 7px 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-size: 0.9rem; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'">
+                                            <input type="radio" name="inline_q_${taskId}_${q.id}" value="${opt.replace(/"/g, '&quot;')}" style="accent-color: ${headerColor};">
+                                            <span style="font-weight: 600; color: ${sectionColor}; min-width: 18px;">${letters[oIdx] || oIdx + 1}.</span>
+                                            <span>${opt}</span>
+                                        </label>`;
+                                    });
+                                } else {
+                                    inlineHtml += `<input type="text" id="inline_q_${taskId}_${q.id}" class="form-input w-full" placeholder="Nhập câu trả lời của bạn..." style="font-size: 0.9rem; padding: 9px 12px; background: rgba(255,255,255,0.07); border: 1px solid ${headerColor}44; color: white; border-radius: 6px;">`;
+                                }
+                                inlineHtml += `</div>`;
+                            });
+                        }
+
+                        const qsJson = encodeURIComponent(JSON.stringify(taskData.questions || []));
+                        const titleEnc = encodeURIComponent(title);
+                        inlineHtml += `<button class="btn btn-primary btn-sm w-full" style="margin-top: 8px; background: ${headerColor}22; border: 1px solid ${headerColor}66; color: ${headerColor}; font-weight: 700;" onclick="submitInlineTask('${taskId}', '${taskData.type}', decodeURIComponent('${titleEnc}'), JSON.parse(decodeURIComponent('${qsJson}')))"><i class="bi bi-send-check"></i> Nộp bài</button>`;
+                    }
+
+                    inlineHtml += `</div></div>`;
+                    bubble.innerHTML = `<div class="chat-bubble-content" style="max-width: 100%; width: 100%;">${inlineHtml}</div>`;
+                } catch (e) {
+                    console.error("Failed to parse interactive task JSON", e);
+                    bubble.innerHTML = `<div class="chat-bubble-content">Lỗi hiển thị bài tập.</div>`;
+                }
+            } else {
+                // Basic markdown parsing for bold and bullet points
+                let formattedText = text
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    .replace(/\n/g, '<br>')
+                    .replace(/^(?:&nbsp;|\s)*•\s+(.*)/gm, '<li>$1</li>'); // basic bullet list item
+
+                bubble.innerHTML = `<div class="chat-bubble-content">${formattedText}</div>`;
+            }
+
             container.appendChild(bubble);
 
             if (scroll) {
@@ -767,7 +865,6 @@
                 if (todayJobs.length === 0) {
                     widget.innerHTML = `
                         <div style="text-align:center; padding:18px 12px; background:rgba(107,114,128,0.08); border:1px solid rgba(107,114,128,0.2); border-radius:12px;">
-                            <div style="font-size:1.8rem; margin-bottom:8px;">😴</div>
                             <p style="font-weight:600; color:rgba(255,255,255,0.7);">Hôm nay bạn không có lịch học.</p>
                             <p style="font-size:0.8rem; margin-top:4px; color:rgba(255,255,255,0.4);">Bạn có thể trò chuyện với AI để lập lịch học hoặc làm bài tự do nhé! 📖</p>
                         </div>
@@ -1115,8 +1212,37 @@
                 btn.innerText = '🔌 Test kết nối';
             }
         }
-    </script>
 
+        // Interactive Task Logic
+        window.submitInlineTask = function (taskId, type, topic, questions) {
+            let submitMessage = "";
+
+            if (type === 'theory') {
+                submitMessage = `Em đã hoàn thành đọc xong bài lý thuyết: ${topic}. Cảm ơn giáo viên!`;
+            } else {
+                const prefix = type === 'exam' ? 'Nộp bài KIỂM TRA ĐÁNH GIÁ' : 'Nộp bài TẬP VẬN DỤNG';
+                submitMessage = `${prefix}: ${topic}\n`;
+                if (questions) {
+                    questions.forEach((q, idx) => {
+                        let answer = "";
+                        if (q.type === 'radio') {
+                            const selected = document.querySelector(`input[name="inline_q_${taskId}_${q.id}"]:checked`);
+                            answer = selected ? selected.value : "Chưa trả lời";
+                        } else {
+                            const input = document.getElementById(`inline_q_${taskId}_${q.id}`);
+                            answer = input ? input.value : "Chưa trả lời";
+                        }
+                        submitMessage += `Câu ${idx + 1}: ${answer}\n`;
+                    });
+                }
+            }
+
+            // Gửi trực tiếp tin nhắn
+            const chatInput = document.getElementById('chat-input');
+            chatInput.value = submitMessage;
+            handleChatSubmit(new Event('submit', { cancelable: true, bubbles: true }));
+        }
+    </script>
 </body>
 
 </html>
