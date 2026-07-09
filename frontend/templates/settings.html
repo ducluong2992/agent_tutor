@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <link rel="icon" href="/static/images/home1.png" type="image/png">
     <meta charset="UTF-8">
@@ -8,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body class="body-gradient min-h-screen">
     <!-- Navbar -->
     <header class="navbar glassmorphism">
@@ -23,7 +25,7 @@
     <main class="settings-container max-w-md mx-auto mt-6">
         <div class="card glassmorphism p-8">
             <h2 class="card-title" style="font-size: 1.5rem; margin-bottom: 1.5rem;">Cài đặt hệ thống</h2>
-            
+
             <div class="tabs-container mb-6">
                 <button class="tab-btn active" onclick="switchTab('profile-tab')">Hồ sơ</button>
                 <button class="tab-btn" onclick="switchTab('api-tab')">API Keys</button>
@@ -39,14 +41,17 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Mục tiêu học tập</label>
-                        <textarea id="profile-goals" class="form-textarea" rows="2">{{ student.learning_goals }}</textarea>
+                        <textarea id="profile-goals" class="form-textarea"
+                            rows="2">{{ student.learning_goals }}</textarea>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Trình độ</label>
                         <select id="profile-level" class="form-select">
-                            <option value="Beginner" {% if student.skill_level=='Beginner' %}selected{% endif %}>Mới bắt đầu (Beginner)</option>
-                            <option value="Intermediate" {% if student.skill_level=='Intermediate' %}selected{% endif %}>Trung cấp (Intermediate)</option>
-                            <option value="Advanced" {% if student.skill_level=='Advanced' %}selected{% endif %}>Nâng cao (Advanced)</option>
+                            <option value="Yếu" {% if student.skill_level=='Yếu' %}selected{% endif %}>Yếu</option>
+                            <option value="Trung Bình" {% if student.skill_level=='Trung Bình' %}selected{% endif %}>
+                                Trung Bình</option>
+                            <option value="Khá" {% if student.skill_level=='Khá' %}selected{% endif %}>Khá</option>
+                            <option value="Giỏi" {% if student.skill_level=='Giỏi' %}selected{% endif %}>Giỏi</option>
                         </select>
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm w-full mt-4">Cập nhật thông tin</button>
@@ -68,26 +73,30 @@
 
                     <div class="form-group api-key-group" id="gemini-group">
                         <label class="form-label">Gemini API Key</label>
-                        <input type="text" id="gemini-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="gemini-status"></div>
+                        <input type="text" id="gemini-key" class="form-input" placeholder="Nhập API key mới..."
+                            autocomplete="off" spellcheck="false">
+                        <div class="text-xs mt-1" id="gemini-status" style="color: #9ca3af;"></div>
                         <label class="form-label mt-2">Gemini Model</label>
                         <input type="text" id="gemini-model" class="form-input" placeholder="gemini-2.5-flash">
                     </div>
 
                     <div class="form-group api-key-group hidden" id="openai-group">
                         <label class="form-label">OpenAI API Key</label>
-                        <input type="text" id="openai-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="openai-status"></div>
+                        <input type="text" id="openai-key" class="form-input" placeholder="Nhập API key mới..."
+                            autocomplete="off" spellcheck="false">
+                        <div class="text-xs mt-1" id="openai-status" style="color: #9ca3af;"></div>
                         <label class="form-label mt-2">OpenAI Model</label>
                         <input type="text" id="openai-model" class="form-input" placeholder="gpt-4o-mini">
                     </div>
 
                     <div class="form-group api-key-group hidden" id="openrouter-group">
                         <label class="form-label">OpenRouter API Key</label>
-                        <input type="text" id="openrouter-key" class="form-input" placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="openrouter-status"></div>
+                        <input type="text" id="openrouter-key" class="form-input" placeholder="Nhập API key mới..."
+                            autocomplete="off" spellcheck="false">
+                        <div class="text-xs mt-1" id="openrouter-status" style="color: #9ca3af;"></div>
                         <label class="form-label mt-2">OpenRouter Model</label>
-                        <input type="text" id="openrouter-model" class="form-input" placeholder="google/gemma-3-27b-it:free">
+                        <input type="text" id="openrouter-model" class="form-input"
+                            placeholder="google/gemma-3-27b-it:free">
                     </div>
 
                     <div id="mock-info" class="text-sm hidden" style="color: #64748b; margin-bottom: 1rem;">
@@ -103,8 +112,10 @@
                 <div class="telegram-instructions text-sm mb-3">
                     <p>Truy cập Telegram Bot của bạn và gửi mã liên kết để đồng bộ lịch bài tập và trò chuyện:</p>
                 </div>
-                <div class="linking-code-box flex-center mb-3" style="text-align: center; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-                    <code id="linking-code-display" style="font-size: 1.5rem; color: #0f172a;">{{ student.linking_code }}</code>
+                <div class="linking-code-box flex-center mb-3"
+                    style="text-align: center; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <code id="linking-code-display"
+                        style="font-size: 1.5rem; color: #0f172a;">{{ student.linking_code }}</code>
                 </div>
                 <div class="telegram-status text-sm text-center">
                     Trạng thái bot:
@@ -115,7 +126,7 @@
                     {% endif %}
                 </div>
             </div>
-            
+
         </div>
     </main>
 
@@ -173,13 +184,37 @@
                     document.getElementById('ai-core-select').value = data.llm_provider || data.preferred_core || 'mock';
                     handleCoreChange();
 
-                    document.getElementById('gemini-status').innerText = data.gemini_api_key_set ? `Đã lưu: ${data.gemini_api_key_masked}` : 'Chưa thiết lập';
-                    document.getElementById('openai-status').innerText = data.openai_api_key_set ? `Đã lưu: ${data.openai_api_key_masked}` : 'Chưa thiết lập';
-                    document.getElementById('openrouter-status').innerText = data.openrouter_api_key_set ? `Đã lưu: ${data.openrouter_api_key_masked}` : 'Chưa thiết lập';
-                    
-                    if (data.gemini_api_key_set) document.getElementById('gemini-key').value = data.gemini_api_key_masked;
-                    if (data.openai_api_key_set) document.getElementById('openai-key').value = data.openai_api_key_masked;
-                    if (data.openrouter_api_key_set) document.getElementById('openrouter-key').value = data.openrouter_api_key_masked;
+                    // Show masked key in input box
+                    const geminiInput = document.getElementById('gemini-key');
+                    const openaiInput = document.getElementById('openai-key');
+                    const openrouterInput = document.getElementById('openrouter-key');
+
+                    if (data.gemini_api_key_set) {
+                        geminiInput.value = data.gemini_api_key_masked;
+                        geminiInput.style.fontFamily = 'monospace';
+                        geminiInput.style.color = '#6b7280';
+                        document.getElementById('gemini-status').innerText = '✔ Key đã được lưu. Xóa đi và nhập key mới nếu muốn thay.';
+                    }
+                    if (data.openai_api_key_set) {
+                        openaiInput.value = data.openai_api_key_masked;
+                        openaiInput.style.fontFamily = 'monospace';
+                        openaiInput.style.color = '#6b7280';
+                        document.getElementById('openai-status').innerText = '✔ Key đã được lưu. Xóa đi và nhập key mới nếu muốn thay.';
+                    }
+                    if (data.openrouter_api_key_set) {
+                        openrouterInput.value = data.openrouter_api_key_masked;
+                        openrouterInput.style.fontFamily = 'monospace';
+                        openrouterInput.style.color = '#6b7280';
+                        document.getElementById('openrouter-status').innerText = '✔ Key đã được lưu. Xóa đi và nhập key mới nếu muốn thay.';
+                    }
+
+                    // Reset style when user starts typing
+                    [geminiInput, openaiInput, openrouterInput].forEach(input => {
+                        input.addEventListener('input', () => {
+                            input.style.fontFamily = 'inherit';
+                            input.style.color = '';
+                        });
+                    });
 
                     document.getElementById('gemini-model').value = data.gemini_model || '';
                     document.getElementById('openai-model').value = data.openai_model || '';
@@ -211,7 +246,7 @@
             try {
                 const res = await fetch('/api/settings', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
@@ -225,4 +260,5 @@
         }
     </script>
 </body>
+
 </html>

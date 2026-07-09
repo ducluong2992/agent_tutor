@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review 360 - AI Tutor Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="flex-center min-h-screen body-gradient">
+    <div class="card onboarding-card max-w-md w-full p-8 text-center glassmorphism animate-fade-in"
+        style="margin-top: 40px; margin-bottom: 40px;">
+        <div class="brand-logo mb-6">
+            <img src="/static/images/logo3.png" alt="AI Math Tutor"
+                style="height: 70px; width: auto; margin: 0 auto 10px auto; display: block;">
+            <h2 style="margin-bottom: 10px; color: #333;">Review 360 độ</h2>
+            <p class="logo-subtitle">Cung cấp thông tin để AI có thể cá nhân hóa lộ trình học cho bạn.</p>
+        </div>
+
+        <form action="/360-review" method="POST" class="form-container">
+            <div class="form-group text-left">
+                <label for="name" class="form-label">Tên</label>
+                <input type="text" id="name" name="name" class="form-input" required value="{{ student.name }}">
+            </div>
+            <div class="form-group text-left">
+                <label for="age" class="form-label">Tuổi</label>
+                <input type="number" id="age" name="age" class="form-input" required placeholder="Ví dụ: 15" min="5"
+                    max="100">
+            </div>
+            <div class="form-group text-left">
+                <label for="grade_level" class="form-label">Lớp</label>
+                <select id="grade_level" name="grade_level" class="form-select" required>
+                    <option value="1">Lớp 1</option>
+                    <option value="2">Lớp 2</option>
+                    <option value="3">Lớp 3</option>
+                    <option value="4">Lớp 4</option>
+                    <option value="5">Lớp 5</option>
+                    <option value="6">Lớp 6</option>
+                    <option value="7">Lớp 7</option>
+                    <option value="8">Lớp 8</option>
+                    <option value="9">Lớp 9</option>
+                    <option value="10">Lớp 10</option>
+                    <option value="11">Lớp 11</option>
+                    <option value="12">Lớp 12</option>
+                    <option value="0">Khác (Đại học/Đi làm)</option>
+                </select>
+            </div>
+            <div class="form-group text-left">
+                <label for="learning_goals" class="form-label">Mục tiêu học tập</label>
+                <textarea id="learning_goals" name="learning_goals" class="form-textarea" rows="2" required
+                    placeholder="Ví dụ: Ôn thi Đại học, Toán cơ bản..."></textarea>
+            </div>
+            <div class="form-group text-left">
+                <label for="strengths_weaknesses" class="form-label">Điểm mạnh, yếu</label>
+                <textarea id="strengths_weaknesses" name="strengths_weaknesses" class="form-textarea" rows="3" required
+                    placeholder="Ví dụ: Điểm mạnh: Đại số, Điểm yếu: Hình học..."></textarea>
+            </div>
+            <div class="form-group text-left">
+                <label for="skill_level" class="form-label">Trình độ hiện tại</label>
+                <select id="skill_level" name="skill_level" class="form-select" required>
+                    <option value="Yếu">Yếu</option>
+                    <option value="Trung Bình">Trung Bình</option>
+                    <option value="Khá">Khá</option>
+                    <option value="Giỏi">Giỏi</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-full mt-6">Bắt đầu học ngay</button>
+        </form>
+    </div>
+</body>
+
+</html>

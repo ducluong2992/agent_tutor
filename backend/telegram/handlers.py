@@ -42,6 +42,26 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     db = get_db()
     try:
+        if linking_code:
+            # Attempt to link using code
+            target_student = db.query(Student).filter(Student.linking_code == linking_code).first()
+            if target_student:
+                # Remove this telegram_id from any other student first (e.g. temporary ones)
+                old_student = db.query(Student).filter(Student.telegram_id == chat_id).first()
+                if old_student and old_student.id != target_student.id:
+                    old_student.telegram_id = None
+                
+                target_student.telegram_id = chat_id
+                db.commit()
+                await update.message.reply_text(
+                    f"✅ Liên kết thành công! Chào {target_student.name}, từ bây giờ tài khoản Web của bạn đã được kết nối và đồng bộ với Telegram."
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Mã liên kết không hợp lệ. Vui lòng kiểm tra lại mã trên giao diện Web."
+                )
+            return
+
         # Check if already linked
         student = db.query(Student).filter(Student.telegram_id == chat_id).first()
         if student:
@@ -49,20 +69,6 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Chào mừng quay trở lại, {student.name}! Tôi là AI Tutor của bạn. Hãy chat với tôi hoặc gửi tài liệu (PDF, Word, TXT) để học nhé!"
             )
             return
-
-        if linking_code:
-            # Attempt to link using code
-            student = db.query(Student).filter(Student.linking_code == linking_code).first()
-            if student:
-                student.telegram_id = chat_id
-                db.commit()
-                await update.message.reply_text(
-                    f"Liên kết thành công! Chào {student.name}, từ bây giờ bạn có thể tương tác với AI Tutor trực tiếp qua Telegram."
-                )
-            else:
-                await update.message.reply_text(
-                    "Mã liên kết không hợp lệ. Vui lòng kiểm tra lại mã trên giao diện Web."
-                )
         else:
             # Create a new student profile directly from Telegram details
             name = update.effective_user.first_name or "Học sinh Telegram"

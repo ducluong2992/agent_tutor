@@ -6,11 +6,11 @@
     --border-glass: #e5e7eb;
     --text-primary: #3c3c3c;
     --text-secondary: #777777;
-    --primary: #58cc02;
-    --primary-hover: #46a302;
-    --accent: #89e219;
-    --accent-hover: #9333ea;
-    --success: #58cc02;
+    --primary: #EE0033;
+    --primary-hover: #c4002a;
+    --accent: #ff3355;
+    --accent-hover: #c4002a;
+    --success: #EE0033;
     --pending: #f59e0b;
     --danger: #ef4444;
 }
@@ -72,7 +72,7 @@ body {
 .max-w-md { max-width: 28rem; }
 .min-h-screen { min-height: 100vh; }
 .text-red-500 { color: var(--danger); }
-.badge-success { background-color: rgba(16, 185, 129, 0.15); color: #34d399; }
+.badge-success { background-color: rgba(238, 0, 51, 0.15); color: #EE0033; }
 .badge-pending { background-color: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .badge-cancelled { background-color: rgba(239, 68, 68, 0.15); color: #f87171; }
 
@@ -104,7 +104,7 @@ body {
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: 0.5px;
-    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    background: linear-gradient(135deg, #EE0033 0%, #c4002a 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -266,7 +266,7 @@ body {
 .logo-title {
     font-size: 2rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    background: linear-gradient(135deg, #EE0033 0%, #c4002a 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -518,8 +518,8 @@ body {
 
 .roadmap-step-row.completed {
     opacity: 0.65;
-    background: rgba(16, 185, 129, 0.04);
-    border-color: rgba(16, 185, 129, 0.1);
+    background: rgba(238, 0, 51, 0.04);
+    border-color: rgba(238, 0, 51, 0.1);
 }
 
 .step-checkbox-container {
@@ -601,9 +601,9 @@ body {
     letter-spacing: 0.5px;
 }
 .schedule-active-badge.on {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: rgba(238, 0, 51, 0.2);
+    color: #EE0033;
+    border: 1px solid rgba(238, 0, 51, 0.3);
 }
 .schedule-active-badge.off {
     background: rgba(239, 68, 68, 0.1);
@@ -638,11 +638,11 @@ body {
     transition: 0.3s;
 }
 .toggle-switch input:checked + .toggle-slider {
-    background: rgba(16, 185, 129, 0.5);
+    background: rgba(238, 0, 51, 0.5);
 }
 .toggle-switch input:checked + .toggle-slider:before {
     transform: translateX(18px);
-    background: #34d399;
+    background: #EE0033;
 }
 
 /* Frequency pills */
@@ -670,7 +670,7 @@ body {
 .freq-pill.selected {
     background: rgba(59, 130, 246, 0.2);
     border-color: var(--primary);
-    color: #34d399;
+    color: #EE0033;
 }
 
 .time-input-row {
@@ -701,7 +701,7 @@ body {
 
 /* ─── Score-weighted progress bar ──────────────────────── */
 .progress-bar-fill.score-weighted {
-    background: linear-gradient(90deg, #10b981 0%, #10b981 50%, #059669 100%);
+    background: linear-gradient(90deg, #EE0033 0%, #c4002a 50%, #a00025 100%);
 }
 
 .progress-detail-row {
@@ -724,7 +724,7 @@ body {
     border-radius: 6px;
     margin-top: 2px;
 }
-.score-badge.high { background: rgba(16,185,129,0.2); color: #34d399; }
+.score-badge.high { background: rgba(238,0,51,0.2); color: #EE0033; }
 .score-badge.mid  { background: rgba(245,158,11,0.2); color: #fbbf24; }
 .score-badge.low  { background: rgba(239,68,68,0.15); color: #f87171; }
 
@@ -750,7 +750,7 @@ body {
 
 /* Save config btn success flash */
 @keyframes flashGreen {
-    0% { background: rgba(16,185,129,0.4); }
+    0% { background: rgba(238,0,51,0.4); }
     100% { background: rgba(255,255,255,0.08); }
 }
 .btn-flash-success {
@@ -829,7 +829,7 @@ body {
     border-color: #6ee7b7;
 }
 .core-selector select:focus {
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    box-shadow: 0 0 0 3px rgba(238, 0, 51, 0.2);
 }
 .core-selector::after {
     content: "▼";
@@ -849,5 +849,5 @@ body {
 }
 .chat-input-box.with-selector:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    box-shadow: 0 0 0 3px rgba(238, 0, 51, 0.2);
 }

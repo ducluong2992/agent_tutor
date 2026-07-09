@@ -5,7 +5,10 @@ from fastapi import FastAPI, Depends, Cookie, Response, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.orm import Session
+import hashlib
+import random
 from dotenv import load_dotenv
 
 # Load environmental variables (.env chỉ cho Telegram và cấu hình tĩnh)
@@ -90,7 +93,8 @@ app.include_router(settings.router)
 os.makedirs("frontend/static", exist_ok=True)
 os.makedirs("frontend/templates", exist_ok=True)
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
-templates = Jinja2Templates(directory="frontend/templates")
+_jinja_env = Environment(loader=FileSystemLoader("frontend/templates"), auto_reload=True)
+templates = Jinja2Templates(env=_jinja_env)
 
 # View Routes
 @app.get("/favicon.ico", include_in_schema=False)
@@ -130,60 +134,136 @@ async def get_onboarding(request: Request, student_id: str = Cookie(None)):
         return RedirectResponse(url="/")
     return templates.TemplateResponse(request, "onboarding.html")
 
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# Temporary in-memory storage for unverified accounts
+pending_registrations = {}
+
 @app.post("/onboarding")
 async def post_onboarding(
     response: Response,
     action: str = Form(...),  # 'register' or 'login'
     name: str = Form(None),
     email: str = Form(...),
-    learning_goals: str = Form(None),
-    skill_level: str = Form(None),
-    grade_level: int = Form(1),
+    password: str = Form(...),
     db: Session = Depends(get_db)
 ):
     email = email.strip().lower()
     
     if action == "login":
         student = db.query(Student).filter(Student.email == email).first()
-        if not student:
-            # If login email doesn't exist, create student
-            import uuid
-            linking_code = f"TUTOR-{uuid.uuid4().hex[:6].upper()}"
-            student = Student(
-                name=email.split("@")[0].capitalize(),
-                email=email,
-                linking_code=linking_code,
-                learning_goals="Toán",
-                grade_level=1,
-                skill_level="Beginner"
-            )
-            db.add(student)
-            db.commit()
-            db.refresh(student)
+        if not student or student.password_hash != hash_password(password):
+            return RedirectResponse(url="/onboarding?error=invalid_credentials", status_code=303)
+            
+        if not student.is_verified:
+            return RedirectResponse(url=f"/verify-otp?email={email}", status_code=303)
+            
+        # Check if 360 review is completed
+        if not student.age or not student.strengths_weaknesses:
+            redirect = RedirectResponse(url="/360-review", status_code=303)
+            redirect.set_cookie("student_id", str(student.id), max_age=30*24*60*60)
+            return redirect
+            
+        redirect = RedirectResponse(url="/", status_code=303)
+        redirect.set_cookie("student_id", str(student.id), max_age=30*24*60*60)
+        return redirect
     else:  # register
         student = db.query(Student).filter(Student.email == email).first()
         if student:
-            # If exists, log them in
-            pass
-        else:
+            return RedirectResponse(url="/onboarding?error=email_exists", status_code=303)
+            
+        import random
+        from backend.services.email_service import send_otp_email
+        otp = str(random.randint(100000, 999999))
+        
+        # Save to memory instead of DB
+        pending_registrations[email] = {
+            "name": name or "Học sinh mới",
+            "password_hash": hash_password(password),
+            "otp_code": otp
+        }
+        
+        # Send OTP via Email
+        send_otp_email(email, otp)
+        
+        return RedirectResponse(url=f"/verify-otp?email={email}", status_code=303)
+
+@app.get("/verify-otp", response_class=HTMLResponse)
+async def get_verify_otp(request: Request, email: str = ""):
+    return templates.TemplateResponse(request, "verify_otp.html", {"email": email})
+
+@app.post("/verify-otp")
+async def post_verify_otp(email: str = Form(...), otp: str = Form(...), db: Session = Depends(get_db)):
+    if email in pending_registrations:
+        data = pending_registrations[email]
+        if data["otp_code"] == otp:
             import uuid
             linking_code = f"TUTOR-{uuid.uuid4().hex[:6].upper()}"
-            student = Student(
-                name=name or "Học sinh mới",
+            
+            new_student = Student(
+                name=data["name"],
                 email=email,
                 linking_code=linking_code,
-                learning_goals=learning_goals or "Toán",
-                grade_level=grade_level,
-                skill_level=skill_level or "Beginner"
+                password_hash=data["password_hash"],
+                is_verified=True
             )
-            db.add(student)
+            db.add(new_student)
             db.commit()
-            db.refresh(student)
+            db.refresh(new_student)
             
-    # Set session cookie
-    redirect = RedirectResponse(url="/", status_code=303)
-    redirect.set_cookie("student_id", str(student.id), max_age=30*24*60*60)  # 30 days
-    return redirect
+            del pending_registrations[email]
+            
+            redirect = RedirectResponse(url="/360-review", status_code=303)
+            redirect.set_cookie("student_id", str(new_student.id), max_age=30*24*60*60)
+            return redirect
+
+    # Legacy check for old registrations already in DB
+    student = db.query(Student).filter(Student.email == email).first()
+    if student and student.otp_code == otp:
+        student.is_verified = True
+        student.otp_code = None
+        db.commit()
+        redirect = RedirectResponse(url="/360-review", status_code=303)
+        redirect.set_cookie("student_id", str(student.id), max_age=30*24*60*60)
+        return redirect
+        
+    return RedirectResponse(url=f"/verify-otp?email={email}&error=invalid_otp", status_code=303)
+
+@app.get("/360-review", response_class=HTMLResponse)
+async def get_360_review(request: Request, student_id: str = Cookie(None), db: Session = Depends(get_db)):
+    if not student_id:
+        return RedirectResponse(url="/onboarding")
+    student = db.query(Student).filter(Student.id == int(student_id)).first()
+    if not student:
+        return RedirectResponse(url="/onboarding")
+    return templates.TemplateResponse(request, "review_360.html", {"student": student})
+
+@app.post("/360-review")
+async def post_360_review(
+    student_id: str = Cookie(None),
+    name: str = Form(...),
+    age: int = Form(...),
+    grade_level: int = Form(...),
+    learning_goals: str = Form(...),
+    strengths_weaknesses: str = Form(...),
+    skill_level: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not student_id:
+        return RedirectResponse(url="/onboarding")
+        
+    student = db.query(Student).filter(Student.id == int(student_id)).first()
+    if student:
+        student.name = name
+        student.age = age
+        student.grade_level = grade_level
+        student.learning_goals = learning_goals
+        student.strengths_weaknesses = strengths_weaknesses
+        student.skill_level = skill_level
+        db.commit()
+        
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

@@ -1,10 +1,3 @@
-# 📖 Giải thích Kỹ thuật Hệ thống AI Tutor
-
-> Tài liệu này giải thích chi tiết 4 câu hỏi kỹ thuật cốt lõi của dự án AI Tutor,
-> có tham chiếu trực tiếp đến code thực tế trong codebase.
-
----
-
 ## Câu hỏi 1: Phân chia Context cho từng User như thế nào?
 
 ### Tóm tắt
@@ -71,20 +64,6 @@ You are an AI Math Tutor for a student with the following profile:
 - Current Unit: {current_unit_text}
 ...
 """
-```
-
-#### 1.4 Sơ đồ tổng quan
-
-```
-Học sinh A (student_id=1) ──> ChatMessage (student_id=1)
-                           ──> student_1_docs (ChromaDB)
-                           ──> Progress (student_id=1)
-                           ──> system_prompt riêng của A
-
-Học sinh B (student_id=2) ──> ChatMessage (student_id=2)
-                           ──> student_2_docs (ChromaDB)
-                           ──> Progress (student_id=2)
-                           ──> system_prompt riêng của B
 ```
 
 > **Kết luận:** Hệ thống không dùng chung context. Mỗi học sinh có bộ dữ liệu

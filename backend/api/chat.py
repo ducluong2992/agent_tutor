@@ -37,6 +37,22 @@ async def send_message(
         llm_service = request.app.state.llm_service
         token_usage = getattr(llm_service, "last_token_usage", None)
         
+        # Sync to Telegram if linked
+        from backend.database.models import Student
+        student = db.query(Student).filter(Student.id == int(student_id)).first()
+        if student and student.telegram_id:
+            try:
+                import asyncio
+                from backend.telegram.bot import send_telegram_message
+                user_sync = f"👤 *Bạn (Web)*:\n{payload.message}"
+                ai_sync = reply
+                # Send user message then AI message
+                asyncio.create_task(send_telegram_message(student.telegram_id, user_sync))
+                asyncio.create_task(send_telegram_message(student.telegram_id, ai_sync))
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to sync message to Telegram: {e}")
+        
         return {
             "status": "success",
             "reply": reply,
@@ -122,9 +138,6 @@ def delete_chat_history(
     db.query(ScheduledJob).filter(ScheduledJob.student_id == sid).delete()
     db.query(Document).filter(Document.student_id == sid).delete()
     
-    # Delete the user as well
-    from backend.database.models import Student
-    db.query(Student).filter(Student.id == sid).delete()
     db.commit()
     
     return {"status": "success", "message": "All user data cleared"}

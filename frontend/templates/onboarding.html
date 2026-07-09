@@ -12,7 +12,7 @@
 <body class="flex-center min-h-screen body-gradient">
     <div class="card onboarding-card max-w-md w-full p-8 text-center glassmorphism animate-fade-in">
         <div class="brand-logo mb-6">
-            <img src="/static/images/logo2.png" alt="AI Math Tutor"
+            <img src="/static/images/logo3.png" alt="AI Math Tutor"
                 style="height: 70px; width: auto; margin: 0 auto 10px auto; display: block;">
             <p class="logo-subtitle">Nền tảng Gia sư Toán học Trí tuệ nhân tạo</p>
         </div>
@@ -36,72 +36,147 @@
                 <input type="email" id="email" name="email" class="form-input" required placeholder="name@domain.com">
             </div>
 
-            <div class="form-group text-left" id="group-goals">
-                <label for="learning_goals" class="form-label">Mục tiêu học Toán</label>
-                <textarea id="learning_goals" name="learning_goals" class="form-textarea" rows="2"
-                    placeholder="Ví dụ: Ôn thi Đại học, Toán cơ bản lớp 5, Luyện giải toán trắc nghiệm..."></textarea>
+            <div class="form-group text-left" id="group-password">
+                <label for="password" class="form-label">Mật khẩu</label>
+                <div style="position: relative;">
+                    <input type="password" id="password" name="password" class="form-input" required
+                        placeholder="Nhập mật khẩu" style="padding-right: 40px;">
+                    <button type="button" onclick="togglePassword('password', this)"
+                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;">👁️</button>
+                </div>
+                <small id="password-hint" class="form-text text-muted"
+                    style="font-size: 0.8em; color: #666; display: block; margin-top: 5px;">Tối thiểu 8 ký tự, 1 chữ
+                    hoa, 1 ký tự đặc biệt</small>
             </div>
 
-            <div class="form-group text-left" id="group-grade">
-                <label for="grade_level" class="form-label">Lớp (1-12)</label>
-                <select id="grade_level" name="grade_level" class="form-select">
-                    <option value="1">Lớp 1</option>
-                    <option value="2">Lớp 2</option>
-                    <option value="3">Lớp 3</option>
-                    <option value="4">Lớp 4</option>
-                    <option value="5">Lớp 5</option>
-                    <option value="6">Lớp 6</option>
-                    <option value="7">Lớp 7</option>
-                    <option value="8">Lớp 8</option>
-                    <option value="9">Lớp 9</option>
-                    <option value="10">Lớp 10</option>
-                    <option value="11">Lớp 11</option>
-                    <option value="12">Lớp 12</option>
-                    <option value="0">Khác (Đại học/Đi làm)</option>
-                </select>
+            <div class="form-group text-left" id="group-confirm-password">
+                <label for="confirm_password" class="form-label">Xác nhận mật khẩu</label>
+                <div style="position: relative;">
+                    <input type="password" id="confirm_password" name="confirm_password" class="form-input"
+                        placeholder="Nhập lại mật khẩu" style="padding-right: 40px;">
+                    <button type="button" onclick="togglePassword('confirm_password', this)"
+                        style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 1.2em;">👁️</button>
+                </div>
             </div>
 
-            <div class="form-group text-left" id="group-level">
-                <label for="skill_level" class="form-label">Trình độ hiện tại</label>
-                <select id="skill_level" name="skill_level" class="form-select">
-                    <option value="Beginner">Mới bắt đầu (Beginner)</option>
-                    <option value="Intermediate">Trung cấp (Intermediate)</option>
-                    <option value="Advanced">Nâng cao (Advanced)</option>
-                </select>
+            <!-- Social Login Placeholders -->
+            <div class="form-group text-center" id="social-login-group" style="display: none; margin-top: 15px;">
+                <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">Hoặc đăng nhập bằng</p>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button type="button" class="btn btn-outline" style="flex: 1; padding: 8px;">Google</button>
+                    <button type="button" class="btn btn-outline" style="flex: 1; padding: 8px;">Facebook</button>
+                </div>
             </div>
 
-            <button type="submit" class="btn btn-primary w-full mt-6">Bắt đầu học ngay</button>
+            <button type="submit" class="btn btn-primary w-full mt-6" id="submit-btn">Đăng ký</button>
         </form>
     </div>
 
     <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const error = urlParams.get('error');
+            if (error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = '#ef4444';
+                errorDiv.style.backgroundColor = '#fee2e2';
+                errorDiv.style.padding = '10px';
+                errorDiv.style.borderRadius = '5px';
+                errorDiv.style.marginBottom = '15px';
+                errorDiv.style.fontSize = '0.9em';
+
+                if (error === 'invalid_credentials') {
+                    switchTab('login');
+                    errorDiv.textContent = 'Tài khoản không hợp lệ hoặc sai mật khẩu!';
+                } else if (error === 'email_exists') {
+                    errorDiv.textContent = 'Email này đã được đăng ký!';
+                } else {
+                    errorDiv.textContent = 'Đã có lỗi xảy ra. Vui lòng thử lại!';
+                }
+
+                const form = document.querySelector('.form-container');
+                form.insertBefore(errorDiv, form.firstChild);
+
+                // Clear the error from URL without reloading
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        });
+
+        function togglePassword(inputId, btn) {
+            const input = document.getElementById(inputId);
+            if (input.type === "password") {
+                input.type = "text";
+                btn.textContent = "🙈";
+            } else {
+                input.type = "password";
+                btn.textContent = "👁️";
+            }
+        }
+
+        const form = document.querySelector('form');
+
+        form.addEventListener('submit', function (e) {
+            const actionType = document.getElementById('action-type').value;
+            if (actionType === 'register') {
+                const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirm_password').value;
+
+                if (password !== confirmPassword) {
+                    e.preventDefault();
+                    alert('Mật khẩu xác nhận không khớp!');
+                    return;
+                }
+
+                const hasUppercase = /[A-Z]/.test(password);
+                const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+                const isLongEnough = password.length >= 8;
+
+                if (!isLongEnough || !hasUppercase || !hasSpecialChar) {
+                    e.preventDefault();
+                    alert('Mật khẩu phải có ít nhất 8 ký tự, bao gồm ít nhất 1 chữ hoa và 1 ký tự đặc biệt!');
+                    return;
+                }
+            }
+        });
+
         function switchTab(type) {
             const btnRegister = document.getElementById('btn-register');
             const btnLogin = document.getElementById('btn-login');
             const actionType = document.getElementById('action-type');
             const groupName = document.getElementById('group-name');
-            const groupGoals = document.getElementById('group-goals');
-            const groupLevel = document.getElementById('group-level');
+            const groupConfirmPassword = document.getElementById('group-confirm-password');
             const nameInput = document.getElementById('name');
+            const confirmPasswordInput = document.getElementById('confirm_password');
+            const submitBtn = document.getElementById('submit-btn');
+            const socialLoginGroup = document.getElementById('social-login-group');
+            const passwordHint = document.getElementById('password-hint');
 
             if (type === 'login') {
                 btnRegister.classList.remove('active');
                 btnLogin.classList.add('active');
                 actionType.value = 'login';
+
                 groupName.style.display = 'none';
-                groupGoals.style.display = 'none';
-                document.getElementById('group-grade').style.display = 'none';
-                groupLevel.style.display = 'none';
-                groupLevel.style.display = 'none';
+                groupConfirmPassword.style.display = 'none';
+                socialLoginGroup.style.display = 'block';
+                passwordHint.style.display = 'none';
+
                 nameInput.removeAttribute('required');
+                confirmPasswordInput.removeAttribute('required');
+                submitBtn.textContent = 'Đăng nhập';
             } else {
                 btnRegister.classList.add('active');
                 btnLogin.classList.remove('active');
                 actionType.value = 'register';
+
                 groupName.style.display = 'block';
-                groupGoals.style.display = 'block';
-                document.getElementById('group-grade').style.display = 'block';
-                groupLevel.style.display = 'block';
+                groupConfirmPassword.style.display = 'block';
+                socialLoginGroup.style.display = 'none';
+                passwordHint.style.display = 'block';
+
+                nameInput.setAttribute('required', 'required');
+                confirmPasswordInput.setAttribute('required', 'required');
+                submitBtn.textContent = 'Đăng ký';
             }
         }
     </script>

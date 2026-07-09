@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xác minh OTP - AI Tutor Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="flex-center min-h-screen body-gradient">
+    <div class="card onboarding-card max-w-md w-full p-8 text-center glassmorphism animate-fade-in">
+        <div class="brand-logo mb-6">
+            <img src="/static/images/logo3.png" alt="AI Math Tutor"
+                style="height: 70px; width: auto; margin: 0 auto 10px auto; display: block;">
+            <h2 style="margin-bottom: 10px; color: #333;">Xác minh Email</h2>
+            <p class="logo-subtitle">Chúng tôi đã gửi mã OTP gồm 6 chữ số đến email <br><strong>{{ email }}</strong></p>
+        </div>
+
+        <form action="/verify-otp" method="POST" class="form-container">
+            <input type="hidden" name="email" value="{{ email }}">
+            <div class="form-group text-left">
+                <label for="otp" class="form-label">Mã OTP</label>
+                <input type="text" id="otp" name="otp" class="form-input" required placeholder="Nhập mã 6 chữ số"
+                    pattern="\d{6}" maxlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary w-full mt-6">Xác minh</button>
+        </form>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'invalid_otp') {
+            alert('Mã OTP không hợp lệ, vui lòng thử lại.');
+        }
+    </script>
+</body>
+
+</html>

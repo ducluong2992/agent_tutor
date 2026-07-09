@@ -37,16 +37,16 @@ class LLMService:
 
         if self.openai_key:
             try:
-                from openai import OpenAI
-                self.openai_client = OpenAI(api_key=self.openai_key)
+                from openai import AsyncOpenAI
+                self.openai_client = AsyncOpenAI(api_key=self.openai_key)
                 logger.info("OpenAI LLM Client initialized successfully.")
             except ImportError:
                 logger.warning("openai package not installed.")
 
         if self.openrouter_key:
             try:
-                from openai import OpenAI
-                self.openrouter_client = OpenAI(
+                from openai import AsyncOpenAI
+                self.openrouter_client = AsyncOpenAI(
                     api_key=self.openrouter_key,
                     base_url="https://openrouter.ai/api/v1"
                 )
@@ -109,7 +109,7 @@ class LLMService:
                 image = Image.open(io.BytesIO(image_bytes))
                 
                 model = self.gemini_client.GenerativeModel(model_name=self.gemini_model)
-                response = model.generate_content([image, prompt])
+                response = await model.generate_content_async([image, prompt])
                 if hasattr(response, 'usage_metadata'):
                     self.last_token_usage = {
                         "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0),
@@ -141,7 +141,7 @@ class LLMService:
                     }
                 ]
                 
-                response = self.openai_client.chat.completions.create(
+                response = await self.openai_client.chat.completions.create(
                     model=self.openai_model,
                     messages=messages,
                     max_tokens=1000
@@ -177,7 +177,7 @@ class LLMService:
                     }
                 ]
                 
-                response = self.openrouter_client.chat.completions.create(
+                response = await self.openrouter_client.chat.completions.create(
                     model=self.openrouter_model,
                     messages=messages,
                     max_tokens=1000
@@ -211,13 +211,23 @@ class LLMService:
                     generation_config["response_mime_type"] = "application/json"
 
                 contents = []
+                history_msgs = []
                 if chat_history:
                     for msg in chat_history:
                         role = "user" if msg["role"] == "user" else "model"
-                        contents.append({"role": role, "parts": [msg["content"]]})
-                contents.append({"role": "user", "parts": [user_prompt]})
+                        history_msgs.append({"role": role, "parts": [msg["content"]]})
+                history_msgs.append({"role": "user", "parts": [user_prompt]})
+                
+                # Collapse consecutive roles to satisfy Gemini/OpenRouter alternating requirements
+                collapsed = []
+                for msg in history_msgs:
+                    if collapsed and collapsed[-1]["role"] == msg["role"]:
+                        collapsed[-1]["parts"][0] += f"\n\n{msg['parts'][0]}"
+                    else:
+                        collapsed.append(msg)
+                contents.extend(collapsed)
 
-                response = model.generate_content(contents, generation_config=generation_config if generation_config else None)
+                response = await model.generate_content_async(contents, generation_config=generation_config if generation_config else None)
                 if hasattr(response, 'usage_metadata'):
                     self.last_token_usage = {
                         "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0),
@@ -241,7 +251,7 @@ class LLMService:
                 if is_json_required:
                     kwargs["response_format"] = {"type": "json_object"}
                     
-                response = self.openai_client.chat.completions.create(**kwargs)
+                response = await self.openai_client.chat.completions.create(**kwargs)
                 if hasattr(response, 'usage') and response.usage:
                     self.last_token_usage = {
                         "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
@@ -265,7 +275,7 @@ class LLMService:
                 if is_json_required:
                     kwargs["response_format"] = {"type": "json_object"}
 
-                response = self.openrouter_client.chat.completions.create(**kwargs)
+                response = await self.openrouter_client.chat.completions.create(**kwargs)
                 if hasattr(response, 'usage') and response.usage:
                     self.last_token_usage = {
                         "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
@@ -284,11 +294,26 @@ class LLMService:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+        history_msgs = []
         if chat_history:
             for msg in chat_history:
                 role = "user" if msg["role"] == "user" else "assistant"
-                messages.append({"role": role, "content": msg["content"]})
-        messages.append({"role": "user", "content": user_prompt})
+                history_msgs.append({"role": role, "content": msg["content"]})
+        history_msgs.append({"role": "user", "content": user_prompt})
+        
+        # Collapse consecutive roles
+        collapsed = []
+        for msg in history_msgs:
+            if collapsed and collapsed[-1]["role"] == msg["role"]:
+                collapsed[-1]["content"] += f"\n\n{msg['content']}"
+            else:
+                collapsed.append(msg)
+                
+        # Make sure it starts with 'user' for strict alternating models
+        if collapsed and collapsed[0]["role"] == "assistant":
+            collapsed.pop(0)
+                
+        messages.extend(collapsed)
         return messages
 
 

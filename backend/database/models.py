@@ -11,9 +11,17 @@ class Student(Base):
     linking_code = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    otp_code = Column(String, nullable=True)
+    
+    # 360 Degree Review Fields
+    age = Column(Integer, nullable=True)
     grade_level = Column(Integer, nullable=True) # Lớp từ 1 đến 12
     learning_goals = Column(Text, nullable=True)
     skill_level = Column(String, default="Beginner")
+    strengths_weaknesses = Column(Text, nullable=True)
+    
     homework_time = Column(String, default="20:00")
     homework_frequency = Column(Integer, default=0)  # 0 = manual, 1 = daily, 2 = every 2 days, etc.
     theory_time = Column(String, nullable=True)

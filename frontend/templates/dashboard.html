@@ -15,7 +15,7 @@
     <header class="navbar glassmorphism">
         <div class="nav-brand">
 
-            <img src="/static/images/logo2.png" alt="AI Math Tutor" style="height: 45px; width: auto;">
+            <img src="/static/images/logo3.png" alt="AI Math Tutor" style="height: 45px; width: auto;">
         </div>
         <div class="nav-user">
             <span class="user-welcome">Xin chào, <strong id="header-student-name">{{ student.name }}</strong></span>
@@ -226,7 +226,7 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     // Display token usage and time info
                     let metaHtml = '';
                     if (data.execution_time_seconds) {
@@ -241,7 +241,7 @@
                     if (metaHtml) {
                         metaHtml = `<div style="font-size: 0.75rem; opacity: 0.6; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">${metaHtml}</div>`;
                     }
-                    
+
                     appendChatMessage('ai', data.reply + metaHtml);
                     currentMessageCount++;
 
@@ -365,7 +365,7 @@
             `;
             container.appendChild(typing);
             scrollChatToBottom();
-            
+
             // Start timer
             let seconds = 0;
             typing.dataset.intervalId = setInterval(() => {
@@ -373,7 +373,7 @@
                 const timerEl = document.getElementById(`${id}_timer`);
                 if (timerEl) timerEl.innerText = seconds;
             }, 1000);
-            
+
             return id;
         }
 
@@ -410,6 +410,7 @@
                 if (response.ok) {
                     document.getElementById('header-student-name').innerText = name;
                     alert('Đã cập nhật hồ sơ thành công!');
+                    closeSettings();
                 } else {
                     alert('Lỗi khi cập nhật thông tin.');
                 }
@@ -455,11 +456,11 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     let metaInfo = '';
                     if (data.execution_time_seconds) metaInfo += ` (Thời gian: ${data.execution_time_seconds}s)`;
                     if (data.token_usage && data.token_usage.total_tokens !== undefined) metaInfo += ` | 🪙 Token AI đã dùng: ${data.token_usage.total_tokens}`;
-                    
+
                     statusDiv.innerText = ` Đã xử lý thành công file ${file.name} ${metaInfo}`;
                     statusDiv.className = 'upload-status mt-2 text-xs text-green-400';
                     input.value = ''; // clear input
@@ -757,12 +758,12 @@
                 const res = await fetch('/api/schedule?date=today', { cache: 'no-store' });
                 if (!res.ok) return;
                 const jobs = await res.json();
-                
+
                 const widget = document.getElementById('today-schedule-widget');
-                
+
                 // Filter out cancelled jobs (already date-filtered by API)
                 const todayJobs = jobs.filter(job => job.status !== 'cancelled');
-                
+
                 if (todayJobs.length === 0) {
                     widget.innerHTML = `
                         <div style="text-align:center; padding:18px 12px; background:rgba(107,114,128,0.08); border:1px solid rgba(107,114,128,0.2); border-radius:12px;">
@@ -773,7 +774,7 @@
                     `;
                     return;
                 }
-                
+
                 const now = new Date();
                 const nowMins = now.getHours() * 60 + now.getMinutes();
 
@@ -781,18 +782,18 @@
                     const [h, m] = timeStr.split(':').map(Number);
                     return h * 60 + m;
                 }
-                
+
                 const itemsHtml = todayJobs.map(job => {
                     const d = new Date(job.scheduled_time);
                     const h = String(d.getHours()).padStart(2, '0');
                     const m = String(d.getMinutes()).padStart(2, '0');
                     const jobTimeStr = `${h}:${m}`;
-                    
+
                     const t = parseTimeMins(jobTimeStr);
                     const active = (nowMins >= t && nowMins < t + 60);
                     const past = (nowMins > t + 60);
                     const opacity = past ? '0.45' : '1';
-                    
+
                     const dotStyle = active
                         ? `background:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,0.3); animation:pulse-dot 1.5s infinite;`
                         : past
@@ -802,7 +803,7 @@
                     const rowBg = active
                         ? `background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); border-radius: 10px;`
                         : ``;
-                        
+
                     let icon = '📚';
                     let label = 'Bài học';
                     if (job.job_type === 'theory') { icon = '📚'; label = 'Học lý thuyết'; }
@@ -822,7 +823,7 @@
                         </div>
                     </div>`;
                 }).join('');
-                
+
                 widget.innerHTML = `
                     <style>
                         @keyframes pulse-dot {
@@ -885,14 +886,12 @@
                         <div class="form-group">
                             <label class="form-label">Trình độ</label>
                             <select id="profile-level" class="form-select">
-                                <option value="Beginner" {% if student.skill_level=='Beginner' %}selected{% endif %}>Mới
-                                    bắt
-                                    đầu (Beginner)</option>
-                                <option value="Intermediate" {% if student.skill_level=='Intermediate' %}selected{%
-                                    endif %}>Trung cấp (Intermediate)</option>
-                                <option value="Advanced" {% if student.skill_level=='Advanced' %}selected{% endif %}>
-                                    Nâng
-                                    cao (Advanced)</option>
+                                <option value="Yếu" {% if student.skill_level=='Yếu' %}selected{% endif %}>Yếu</option>
+                                <option value="Trung Bình" {% if student.skill_level=='Trung Bình' %}selected{% endif
+                                    %}>Trung Bình</option>
+                                <option value="Khá" {% if student.skill_level=='Khá' %}selected{% endif %}>Khá</option>
+                                <option value="Giỏi" {% if student.skill_level=='Giỏi' %}selected{% endif %}>Giỏi
+                                </option>
                             </select>
                         </div>
                         <button type="submit" class="btn btn-primary btn-sm w-full mt-2">Cập nhật thông tin</button>
@@ -936,27 +935,21 @@
                 <form id="api-form" onsubmit="saveApiSettings(event)">
                     <div class="form-group api-key-group" id="gemini-group">
                         <label class="form-label" style="font-weight: bold; color: #58cc02;"> Gemini API Key</label>
-                        <input type="password" id="gemini-key" class="form-input"
-                            placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="gemini-status" style="color: #777;"></div>
+                        <input type="password" id="gemini-key" class="form-input" placeholder="Nhập API key mới...">
                         <label class="form-label mt-2">Gemini Model</label>
                         <input type="text" id="gemini-model" class="form-input" placeholder="gemini-2.5-flash">
                     </div>
 
                     <div class="form-group api-key-group hidden" id="openai-group">
                         <label class="form-label" style="font-weight: bold; color: #58cc02;"> OpenAI API Key</label>
-                        <input type="password" id="openai-key" class="form-input"
-                            placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="openai-status" style="color: #777;"></div>
+                        <input type="password" id="openai-key" class="form-input" placeholder="Nhập API key mới...">
                         <label class="form-label mt-2">OpenAI Model</label>
                         <input type="text" id="openai-model" class="form-input" placeholder="gpt-4o-mini">
                     </div>
 
                     <div class="form-group api-key-group hidden" id="openrouter-group">
                         <label class="form-label" style="font-weight: bold; color: #58cc02;"> OpenRouter API Key</label>
-                        <input type="password" id="openrouter-key" class="form-input"
-                            placeholder="Nhập key mới (để trống nếu giữ key cũ)...">
-                        <div class="text-xs mt-1" id="openrouter-status" style="color: #777;"></div>
+                        <input type="password" id="openrouter-key" class="form-input" placeholder="Nhập API key mới...">
                         <label class="form-label mt-2">OpenRouter Model</label>
                         <input type="text" id="openrouter-model" class="form-input"
                             placeholder="google/gemma-3-27b-it:free">
@@ -1023,13 +1016,13 @@
                 document.getElementById('ai-core-select').value = providerVal;
                 handleCoreChange();
 
-                // Show current key status
-                document.getElementById('gemini-status').innerText = data.gemini_api_key_set
-                    ? `✅ Đã lưu: ${data.gemini_api_key_masked}` : '⚠️ Chưa thiết lập';
-                document.getElementById('openai-status').innerText = data.openai_api_key_set
-                    ? `✅ Đã lưu: ${data.openai_api_key_masked}` : '⚠️ Chưa thiết lập';
-                document.getElementById('openrouter-status').innerText = data.openrouter_api_key_set
-                    ? `✅ Đã lưu: ${data.openrouter_api_key_masked}` : '⚠️ Chưa thiết lập';
+                // Show current key status in input placeholders
+                document.getElementById('gemini-key').placeholder = data.gemini_api_key_set
+                    ? data.gemini_api_key_masked : 'Nhập API key mới...';
+                document.getElementById('openai-key').placeholder = data.openai_api_key_set
+                    ? data.openai_api_key_masked : 'Nhập API key mới...';
+                document.getElementById('openrouter-key').placeholder = data.openrouter_api_key_set
+                    ? data.openrouter_api_key_masked : 'Nhập API key mới...';
 
                 // Fill model inputs
                 document.getElementById('gemini-model').value = data.gemini_model || 'gemini-2.5-flash';
